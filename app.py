@@ -3114,13 +3114,16 @@ def robots_txt():
     return app.send_static_file('robots.txt')
 
 if __name__ == '__main__':
+    host = os.getenv('FLASK_RUN_HOST', '0.0.0.0')
+    port = int(os.getenv('PORT', os.getenv('FLASK_RUN_PORT', '5000')))
+    debug = os.getenv('FLASK_DEBUG', 'false').lower() in ('true', '1')
     logger = logging.getLogger('app.main')
     logger.info("Starting Flask application", extra={
         'extra_fields': {
-            'host': '0.0.0.0',
-            'port': 5001,
-            'debug_mode': True,
+            'host': host,
+            'port': port,
+            'debug_mode': debug,
             'training_mode': get_training_mode()
         }
     })
-    app.run(host='0.0.0.0', port=5001, debug=True) 
+    app.run(host=host, port=port, debug=debug) 
