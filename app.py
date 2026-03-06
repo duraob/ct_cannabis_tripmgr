@@ -1117,6 +1117,8 @@ def get_trips():
             trip_dict = {
                 'id': trip.id,
                 'status': trip.status,
+                'execution_status': trip.execution_status or 'pending',
+                'inventory_processed_in_biotrack': any(to.status in ('sublotted', 'inventory_moved') for to in trip.trip_orders),
                 'date_created': trip.date_created.isoformat() if trip.date_created else None,
                 'date_transacted': trip.date_transacted.isoformat() if trip.date_transacted else None,
                 'delivery_date': trip.delivery_date.isoformat() if trip.delivery_date else None,
@@ -3100,6 +3102,98 @@ def test_finished_goods_report():
     except Exception as e:
         logger.error(f"Error testing finished goods report: {str(e)}")
         return jsonify({'error': f'Failed to test finished goods report: {str(e)}'}), 500
+
+
+@app.route('/adjustments')
+@login_required
+def adjustments():
+    """Adjustments page: inventory quantity edits and BioTrack adjustment submit."""
+    return render_template('adjustments.html')
+
+
+@app.route('/api/adjustments/inventory')
+@login_required
+def get_adjustments_inventory():
+    """Return inventory for adjustments: Item ID, Product Name, Quantity, Room Name. Sorted by room then product."""
+    try:
+        from api.biotrack import get_auth_token, get_inventory_info, get_room_info, get_last_inventory_error
+        token = get_auth_token()
+        if not token:
+            return jsonify({'error': 'Failed to authenticate with BioTrack'}), 500
+        inventory_data = get_inventory_info(token)
+        if not inventory_data:
+            err = get_last_inventory_error()
+            return jsonify({'error': err or 'Failed to retrieve inventory'}), 500
+        room_data = get_room_info(token)
+        from utils.inventory_types import get_product_display_name
+        room_lookup = {str(rid): info['name'] for rid, info in (room_data or {}).items()}
+        rows = []
+        for item_id, item_info in inventory_data.items():
+            barcodeid = str(item_info.get('barcode_id') or item_info.get('barcode') or item_id)
+            room_id = str(item_info.get('currentroom') or '').strip()
+            room_name = room_lookup.get(room_id, 'Unknown Room')
+            product_name = get_product_display_name(item_info)
+            qty = item_info.get('remaining_quantity', 0)
+            try:
+                qty = float(qty) if qty is not None else 0
+            except (TypeError, ValueError):
+                qty = 0
+            rows.append({
+                'barcodeid': barcodeid,
+                'item_id': str(item_id),
+                'product_name': product_name,
+                'quantity': qty,
+                'room_name': room_name,
+                'room_id': room_id
+            })
+        rows.sort(key=lambda r: (r['room_name'].lower(), r['product_name'].lower()))
+        return jsonify({'inventory': rows})
+    except Exception as e:
+        logger = logging.getLogger('app.adjustments')
+        logger.error(f"Adjustments inventory error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/adjustments/submit', methods=['POST'])
+@login_required
+def submit_adjustments():
+    """Submit inventory adjustments to BioTrack. Body: { adjustments: [ { barcodeid, quantity, type, reason }, ... ] }."""
+    try:
+        data = request.get_json() or {}
+        adjustments = data.get('adjustments') or []
+        if not adjustments:
+            return jsonify({'error': 'No adjustments provided'}), 400
+        valid_types = {'2', '3', '4', '5'}
+        for adj in adjustments:
+            bid = adj.get('barcodeid')
+            qty = adj.get('quantity')
+            t = str(adj.get('type', '')).strip()
+            reason = (adj.get('reason') or '').strip()
+            if not bid:
+                return jsonify({'error': 'Missing barcodeid in adjustment'}), 400
+            if t not in valid_types:
+                return jsonify({'error': f'Invalid adjustment type: {t}'}), 400
+            if not reason:
+                return jsonify({'error': 'Adjustment reason is required'}), 400
+            try:
+                float(qty)
+            except (TypeError, ValueError):
+                return jsonify({'error': f'Invalid quantity for {bid}'}), 400
+        from api.biotrack import get_auth_token, post_inventory_adjust
+        token = get_auth_token()
+        if not token:
+            return jsonify({'error': 'Failed to authenticate with BioTrack'}), 500
+        nodes = [{'barcodeid': a['barcodeid'], 'quantity': str(a['quantity']), 'type': str(a['type']).strip(), 'reason': (a.get('reason') or '').strip()} for a in adjustments]
+        result = post_inventory_adjust(token, nodes)
+        if result is None:
+            return jsonify({'error': 'BioTrack adjustment failed'}), 500
+        if isinstance(result, dict) and not result.get('success', True):
+            return jsonify({'error': result.get('error', 'BioTrack adjustment failed')}), 500
+        return jsonify({'success': True})
+    except Exception as e:
+        logger = logging.getLogger('app.adjustments')
+        logger.error(f"Submit adjustments error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/help')

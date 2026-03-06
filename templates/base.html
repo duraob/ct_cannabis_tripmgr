@@ -56,61 +56,39 @@
                         <h1 class="text-xl font-bold text-gray-900">Trip Manager</h1>
                     </div>
                     
-                    <!-- Navigation Container with Flexbox -->
-                    <div class="hidden lg:flex lg:flex-1 lg:justify-center lg:space-x-12">
-                        <!-- Primary Navigation - Core Trip Management -->
-                        <div class="flex items-center space-x-6">
-                            <div class="flex items-center">
-                                <span class="text-xs font-medium text-gray-400 uppercase tracking-wider px-3 py-1 bg-gray-100 rounded-md">Core</span>
-                            </div>
-                            <div class="flex space-x-4">
-                                <a href="{{ url_for('trips') }}" 
-                                   class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-2 py-2 border-b-2 text-sm font-medium whitespace-nowrap">
-                                    Trips
-                                </a>
-                                <a href="{{ url_for('new_trip') }}" 
-                                   class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-2 py-2 border-b-2 text-sm font-medium whitespace-nowrap">
-                                    New Trip
-                                </a>
-                                <a href="{{ url_for('order_processing') }}" 
-                                   class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-2 py-2 border-b-2 text-sm font-medium whitespace-nowrap">
-                                    Single Order
-                                </a>
+                    <!-- Desktop: grouped dropdowns -->
+                    <div class="hidden lg:flex lg:flex-1 lg:justify-center lg:items-center lg:gap-1">
+                        <div class="relative nav-group">
+                            <button type="button" class="nav-group-btn flex items-center gap-1.5 px-4 py-3 min-h-[44px] text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg" aria-expanded="false" aria-haspopup="true" data-panel="nav-core">
+                                Core
+                                <svg class="w-4 h-4 text-gray-500 nav-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                            </button>
+                            <div id="nav-core" class="nav-panel hidden absolute left-0 top-full mt-1 w-48 py-1 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                                <a href="{{ url_for('trips') }}" class="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-t-lg {{ 'font-semibold text-primary' if request.endpoint == 'trips' or request.endpoint == 'trip_detail' else '' }}">Trips</a>
+                                <a href="{{ url_for('new_trip') }}" class="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 {{ 'font-semibold text-primary' if request.endpoint == 'new_trip' else '' }}">New Trip</a>
+                                <a href="{{ url_for('order_processing') }}" class="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-b-lg {{ 'font-semibold text-primary' if request.endpoint == 'order_processing' else '' }}">Single Order</a>
                             </div>
                         </div>
-                        
-                        <!-- Secondary Navigation - System Management -->
-                        <div class="flex items-center space-x-6">
-                            <div class="flex items-center">
-                                <span class="text-xs font-medium text-gray-400 uppercase tracking-wider px-3 py-1 bg-gray-100 rounded-md">System</span>
-                            </div>
-                            <div class="flex space-x-4">
-                                <a href="{{ url_for('config') }}" 
-                                   class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-2 py-2 border-b-2 text-sm font-medium whitespace-nowrap">
-                                    Config
-                                </a>
-                                <a href="{{ url_for('mapping') }}" 
-                                   class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-2 py-2 border-b-2 text-sm font-medium whitespace-nowrap">
-                                    Mapping
-                                </a>
+                        <div class="relative nav-group">
+                            <button type="button" class="nav-group-btn flex items-center gap-1.5 px-4 py-3 min-h-[44px] text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg" aria-expanded="false" aria-haspopup="true" data-panel="nav-system">
+                                System
+                                <svg class="w-4 h-4 text-gray-500 nav-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                            </button>
+                            <div id="nav-system" class="nav-panel hidden absolute left-0 top-full mt-1 w-48 py-1 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                                <a href="{{ url_for('config') }}" class="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-t-lg {{ 'font-semibold text-primary' if request.endpoint == 'config' else '' }}">Config</a>
+                                <a href="{{ url_for('mapping') }}" class="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 {{ 'font-semibold text-primary' if request.endpoint == 'mapping' else '' }}">Mapping</a>
+                                <a href="{{ url_for('adjustments') }}" class="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-b-lg {{ 'font-semibold text-primary' if request.endpoint == 'adjustments' else '' }}">Adjustments</a>
                             </div>
                         </div>
-                        
-                        <!-- Support Navigation -->
-                        <div class="flex items-center space-x-6">
-                            <div class="flex items-center">
-                                <span class="text-xs font-medium text-gray-400 uppercase tracking-wider px-3 py-1 bg-gray-100 rounded-md">Support</span>
-                            </div>
-                            <div class="flex space-x-4">
-                                <a href="{{ url_for('help') }}" 
-                                   class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-2 py-2 border-b-2 text-sm font-medium whitespace-nowrap">
-                                    Help
-                                </a>
+                        <div class="relative nav-group">
+                            <button type="button" class="nav-group-btn flex items-center gap-1.5 px-4 py-3 min-h-[44px] text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg" aria-expanded="false" aria-haspopup="true" data-panel="nav-support">
+                                Support
+                                <svg class="w-4 h-4 text-gray-500 nav-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                            </button>
+                            <div id="nav-support" class="nav-panel hidden absolute left-0 top-full mt-1 w-48 py-1 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                                <a href="{{ url_for('help') }}" class="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-t-lg {{ 'rounded-b-lg' if current_user.role != 'admin' else '' }} {{ 'font-semibold text-primary' if request.endpoint == 'help' else '' }}">Help</a>
                                 {% if current_user.role == 'admin' %}
-                                <a href="{{ url_for('users') }}" 
-                                   class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-2 py-2 border-b-2 text-sm font-medium whitespace-nowrap">
-                                    Users
-                                </a>
+                                <a href="{{ url_for('users') }}" class="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-b-lg {{ 'font-semibold text-primary' if request.endpoint == 'users' else '' }}">Users</a>
                                 {% endif %}
                             </div>
                         </div>
@@ -162,37 +140,36 @@
                 </div>
             </div>
             
-            <!-- Mobile Navigation Menu -->
-            <div id="mobile-menu" class="lg:hidden hidden">
-                <div class="pt-2 pb-3 space-y-1 border-t border-gray-200">
-                    <!-- Core Section -->
-                    <div class="px-3 py-2">
-                        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Core</h3>
-                        <div class="mt-2 space-y-1">
-                            <a href="{{ url_for('trips') }}" class="block px-3 py-2 text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-md">Trips</a>
-                            <a href="{{ url_for('new_trip') }}" class="block px-3 py-2 text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-md">New Trip</a>
-                            <a href="{{ url_for('order_processing') }}" class="block px-3 py-2 text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-md">Single Order</a>
-                        </div>
+            <!-- Mobile Navigation Menu (collapsible groups) -->
+            <div id="mobile-menu" class="lg:hidden hidden border-t border-gray-200">
+                <div class="pt-1 pb-3">
+                    <button type="button" class="mobile-nav-group w-full flex items-center justify-between px-4 py-3 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md min-h-[44px]" data-mobile-panel="mobile-core" aria-expanded="false">
+                        Core
+                        <svg class="mobile-nav-chevron w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    </button>
+                    <div id="mobile-core" class="mobile-nav-panel hidden pl-4 pb-2">
+                        <a href="{{ url_for('trips') }}" class="block px-4 py-3 text-gray-700 hover:bg-gray-50 rounded-md min-h-[44px] flex items-center">Trips</a>
+                        <a href="{{ url_for('new_trip') }}" class="block px-4 py-3 text-gray-700 hover:bg-gray-50 rounded-md min-h-[44px] flex items-center">New Trip</a>
+                        <a href="{{ url_for('order_processing') }}" class="block px-4 py-3 text-gray-700 hover:bg-gray-50 rounded-md min-h-[44px] flex items-center">Single Order</a>
                     </div>
-                    
-                    <!-- System Section -->
-                    <div class="px-3 py-2">
-                        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">System</h3>
-                        <div class="mt-2 space-y-1">
-                            <a href="{{ url_for('config') }}" class="block px-3 py-2 text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-md">Config</a>
-                            <a href="{{ url_for('mapping') }}" class="block px-3 py-2 text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-md">Mapping</a>
-                        </div>
+                    <button type="button" class="mobile-nav-group w-full flex items-center justify-between px-4 py-3 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md min-h-[44px]" data-mobile-panel="mobile-system" aria-expanded="false">
+                        System
+                        <svg class="mobile-nav-chevron w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    </button>
+                    <div id="mobile-system" class="mobile-nav-panel hidden pl-4 pb-2">
+                        <a href="{{ url_for('config') }}" class="block px-4 py-3 text-gray-700 hover:bg-gray-50 rounded-md min-h-[44px] flex items-center">Config</a>
+                        <a href="{{ url_for('mapping') }}" class="block px-4 py-3 text-gray-700 hover:bg-gray-50 rounded-md min-h-[44px] flex items-center">Mapping</a>
+                        <a href="{{ url_for('adjustments') }}" class="block px-4 py-3 text-gray-700 hover:bg-gray-50 rounded-md min-h-[44px] flex items-center">Adjustments</a>
                     </div>
-                    
-                    <!-- Support Section -->
-                    <div class="px-3 py-2">
-                        <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Support</h3>
-                        <div class="mt-2 space-y-1">
-                            <a href="{{ url_for('help') }}" class="block px-3 py-2 text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-md">Help</a>
-                            {% if current_user.role == 'admin' %}
-                            <a href="{{ url_for('users') }}" class="block px-3 py-2 text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-md">Users</a>
-                            {% endif %}
-                        </div>
+                    <button type="button" class="mobile-nav-group w-full flex items-center justify-between px-4 py-3 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md min-h-[44px]" data-mobile-panel="mobile-support" aria-expanded="false">
+                        Support
+                        <svg class="mobile-nav-chevron w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    </button>
+                    <div id="mobile-support" class="mobile-nav-panel hidden pl-4 pb-2">
+                        <a href="{{ url_for('help') }}" class="block px-4 py-3 text-gray-700 hover:bg-gray-50 rounded-md min-h-[44px] flex items-center">Help</a>
+                        {% if current_user.role == 'admin' %}
+                        <a href="{{ url_for('users') }}" class="block px-4 py-3 text-gray-700 hover:bg-gray-50 rounded-md min-h-[44px] flex items-center">Users</a>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -238,34 +215,50 @@
             }
         }
 
-        // Mobile menu toggle functionality
+        // Desktop nav dropdowns: click to open, one open at a time, close on outside click
         document.addEventListener('DOMContentLoaded', function() {
-            const mobileMenuButton = document.getElementById('mobile-menu-button');
-            const mobileMenu = document.getElementById('mobile-menu');
-            
-            if (mobileMenuButton && mobileMenu) {
-                mobileMenuButton.addEventListener('click', function() {
-                    const isHidden = mobileMenu.classList.contains('hidden');
-                    if (isHidden) {
-                        mobileMenu.classList.remove('hidden');
-                        // Change icon to close
-                        mobileMenuButton.innerHTML = `
-                            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        `;
-                    } else {
-                        mobileMenu.classList.add('hidden');
-                        // Change icon back to menu
-                        mobileMenuButton.innerHTML = `
-                            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
-                            </svg>
-                        `;
+            document.querySelectorAll('.nav-group-btn').forEach(function(btn) {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    var panelId = btn.getAttribute('data-panel');
+                    var panel = document.getElementById(panelId);
+                    var isOpen = !panel.classList.contains('hidden');
+                    document.querySelectorAll('.nav-panel').forEach(function(p) { p.classList.add('hidden'); });
+                    document.querySelectorAll('.nav-group-btn').forEach(function(b) { b.setAttribute('aria-expanded', 'false'); });
+                    if (!isOpen) {
+                        panel.classList.remove('hidden');
+                        btn.setAttribute('aria-expanded', 'true');
                     }
                 });
+            });
+            document.addEventListener('click', function() {
+                document.querySelectorAll('.nav-panel').forEach(function(p) { p.classList.add('hidden'); });
+                document.querySelectorAll('.nav-group-btn').forEach(function(b) { b.setAttribute('aria-expanded', 'false'); });
+            });
+
+            // Mobile menu toggle
+            const mobileMenuButton = document.getElementById('mobile-menu-button');
+            const mobileMenu = document.getElementById('mobile-menu');
+            if (mobileMenuButton && mobileMenu) {
+                mobileMenuButton.addEventListener('click', function() {
+                    var isHidden = mobileMenu.classList.contains('hidden');
+                    mobileMenu.classList.toggle('hidden');
+                    mobileMenuButton.innerHTML = isHidden
+                        ? '<svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>'
+                        : '<svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>';
+                });
             }
-            
+            // Mobile nav: collapsible groups
+            document.querySelectorAll('.mobile-nav-group').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    var panelId = this.getAttribute('data-mobile-panel');
+                    var panel = document.getElementById(panelId);
+                    var expanded = this.getAttribute('aria-expanded') === 'true';
+                    panel.classList.toggle('hidden', expanded);
+                    this.setAttribute('aria-expanded', !expanded);
+                });
+            });
+
             // User dropdown menu functionality
             const userMenuButton = document.getElementById('user-menu-button');
             const userDropdown = document.getElementById('user-dropdown');

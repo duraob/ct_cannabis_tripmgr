@@ -11,6 +11,7 @@ from io import StringIO
 from flask import current_app
 from models import db, GlobalPreference
 from api.biotrack import get_auth_token, get_inventory_info, get_room_info, get_inventory_qa_check
+from utils.inventory_types import get_product_display_name
 
 logger = logging.getLogger('utils.rpt_generation')
 
@@ -192,7 +193,7 @@ def _create_inventory_csv(inventory_data, room_lookup):
             # Write row
             writer.writerow([
                 str(item_id),
-                item_info.get('productname', 'Unknown Product'),
+                get_product_display_name(item_info),
                 item_info.get('remaining_quantity', 0),
                 current_room_id,
                 current_room_name,
@@ -286,7 +287,7 @@ def _create_finished_goods_csv(inventory_data, room_lookup, selected_rooms):
             cbd_pct = lab_results.get('cbd', '') if lab_results else ''
             
             # Calculate new fields
-            product_name = item_info.get('productname', 'Unknown Product')
+            product_name = get_product_display_name(item_info)
             pull_number = _calculate_pull_number(product_name)
             package_unit = _calculate_package_unit(inventory_type, product_name)
             

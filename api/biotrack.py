@@ -33,6 +33,9 @@ load_dotenv()
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# Last BioTrack error from get_inventory_info (for API to surface to user)
+_last_inventory_error = None
+
 # Configuration constants
 MAX_RETRIES = 3
 RETRY_DELAY = 1  # seconds
@@ -185,9 +188,9 @@ def get_auth_token() -> Optional[str]:
         "action": "login",
         "username": BIOTRACK_USERNAME,
         "password": BIOTRACK_PASSWORD,
-        "license_number": BIOTRACK_UBI
+        "license_number": BIOTRACK_UBI,
+        "training": training
     }
-    
     try:
         response_data = _make_api_request(data, "login")
         
@@ -498,33 +501,49 @@ def get_inventory_info(token: str) -> Optional[Dict[str, Dict[str, Any]]]:
         "active": "1",
         "training": training
     }
-    
+    global _last_inventory_error
+    _last_inventory_error = None
     try:
         response_data = _make_api_request(data, "inventory_info")
-        
         if response_data and "inventory" in response_data:
             inventory = response_data["inventory"]
             inventory_dict = {}
-            
+            if not isinstance(inventory, list):
+                logger.error("BioTrack inventory field is not a list: %s", type(inventory).__name__)
+                return None
             for item in inventory:
                 try:
                     item_id = item.get("id")
                     if item_id:
-                        # Return the full item data from BioTrack instead of just a subset
                         inventory_dict[item_id] = item
                 except KeyError as e:
                     logger.warning(f"Inventory item data missing required field: {e}")
                     continue
-            
+            _last_inventory_error = None
             logger.info(f"Retrieved {len(inventory_dict)} inventory items from BioTrack")
             return inventory_dict
         else:
-            logger.error("Inventory info response missing 'inventory' field")
+            err = (response_data or {}).get("error", "")
+            errcode = (response_data or {}).get("errorcode", "")
+            _last_inventory_error = err or "Unknown BioTrack error"
+            if errcode:
+                _last_inventory_error = f"{_last_inventory_error} (code {errcode})"
+            keys = list(response_data.keys()) if response_data else []
+            logger.error(
+                "Inventory info response missing 'inventory' field. keys=%s error=%s errorcode=%s",
+                keys, err or "(none)", errcode or "(none)"
+            )
             return None
-            
+
     except Exception as e:
+        _last_inventory_error = str(e)
         logger.error(f"Failed to get inventory info: {e}")
         return None
+
+
+def get_last_inventory_error():
+    """Return the last error message from get_inventory_info, or None."""
+    return _last_inventory_error
 
 
 def get_inventory_qa_check(token: str, barcode_id: str) -> Optional[Dict[str, Any]]:
@@ -991,5 +1010,49 @@ def post_manifest(
         return None
 
 
+def post_inventory_adjust(
+    token: str,
+    data: Union[Dict[str, Any], List[Dict[str, Any]]]
+) -> Optional[Dict[str, Any]]:
+    """
+    Adjust quantity of one or more inventory items in BioTrack.
+    Accepts a single adjustment dict or a list of dicts.
+    Each node: barcodeid (str), quantity (str), type (str), reason (str).
+    Type codes: 2 Theft, 3 Seizure, 4 Correcting a mistake, 5 Moisture loss.
+    """
+    if not validate_token(token):
+        return None
+    nodes = [data] if isinstance(data, dict) else (data or [])
+    if not nodes:
+        logger.error("No adjustment data provided")
+        return None
+    for node in nodes:
+        if not isinstance(node, dict) or not node.get("barcodeid") or not node.get("type"):
+            logger.error("Each adjustment must have barcodeid and type")
+            return None
+    import sys
+    import os
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from app import get_training_mode
+    training = get_training_mode()
+    payload = {
+        "API": "4.0",
+        "action": "inventory_adjust",
+        "sessionid": token,
+        "data": nodes,
+        "training": training
+    }
+    try:
+        response_data = _make_api_request(payload, "inventory_adjust")
+        if response_data and str(response_data.get("success")) == "1":
+            logger.info("Successfully submitted inventory adjustment(s)")
+            return response_data
+        err_msg = (response_data or {}).get("error", "Unknown BioTrack error")
+        err_code = (response_data or {}).get("errorcode", "")
+        logger.error(f"Inventory adjust failed: {response_data}")
+        return {"success": False, "error": err_msg, "errorcode": err_code}
+    except Exception as e:
+        logger.error(f"Failed to post inventory adjust: {e}")
+        return {"success": False, "error": str(e)}
 
 

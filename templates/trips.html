@@ -666,7 +666,7 @@ function renderTrips() {
                 #${trip.id}
             </td>
             <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                <div class="flex items-center space-x-2">
+                <div class="flex items-center space-x-2 flex-wrap gap-1">
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
                                             ${trip.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                                               trip.status === 'validated' ? 'bg-orange-100 text-orange-800' :
@@ -676,6 +676,7 @@ function renderTrips() {
                                               'bg-gray-100 text-gray-800'}">
                         ${trip.status.charAt(0).toUpperCase() + trip.status.slice(1).replace('_', ' ')}
                     </span>
+                    ${trip.execution_status === 'failed' && trip.inventory_processed_in_biotrack ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Inventory moved</span>' : ''}
                     <select onchange="changeTripStatus(${trip.id}, this.value, '${trip.status}', this)" 
                             class="text-xs border border-gray-300 rounded-md px-2 py-1 bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="pending" ${trip.status === 'pending' ? 'selected' : ''}>Pending</option>

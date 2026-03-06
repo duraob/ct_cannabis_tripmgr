@@ -8,10 +8,11 @@ The BioTrack API integration module (`api/biotrack.py`) provides a comprehensive
 
 1. [Configuration](#configuration)
 2. [Authentication](#authentication)
-3. [Core Functions](#core-functions)
-4. [Usage Patterns](#usage-patterns)
-5. [Error Handling](#error-handling)
-6. [Best Practices](#best-practices)
+3. [Inventory Types (Reference)](#inventory-types-reference)
+4. [Core Functions](#core-functions)
+5. [Usage Patterns](#usage-patterns)
+6. [Error Handling](#error-handling)
+7. [Best Practices](#best-practices)
 
 ---
 
@@ -82,6 +83,52 @@ if not token:
 - The session token must be used for all subsequent API calls
 - Tokens are session-based and may expire
 - Always check for `None` return value before using the token
+
+---
+
+## Inventory Types (Reference)
+
+Inventory items from `get_inventory_info` / `sync_inventory` include an `inventorytype` field (numeric id). The application maps these ids to user-friendly names in `utils/inventory_types.py` (e.g. for display when product name is missing: `strain - inventory_type`).
+
+| id | name |
+|----|------|
+| 6 | Flower |
+| 7 | Clone |
+| 9 | Other Material |
+| 10 | Seed |
+| 11 | Plant Tissue |
+| 12 | Mature Plant |
+| 13 | Flower Lot |
+| 14 | Other Material Lot |
+| 15 | Bubble Hash |
+| 16 | Hash |
+| 17 | Hydrocarbon Extract |
+| 19 | Food Grade Solvent Extract |
+| 20 | Infused Dairy Butter or Fat in Solid Form |
+| 21 | Infused Cooking Oil |
+| 22 | Solid Marijuana Infused Edible |
+| 23 | Liquid Marijuana Infused Edible |
+| 24 | Marijuana Extract for Inhalation |
+| 25 | Marijuana Infused Topicals |
+| 27 | Waste |
+| 28 | Usable Marijuana |
+| 29 | Wet Flower |
+| 30 | Marijuana Mix |
+| 31 | Marijuana Mix Packaged |
+| 32 | Marijuana Mix Infused |
+| 33 | Non-Mandatory QA Sample |
+| 34 | Capsule |
+| 35 | Tincture |
+| 36 | Transdermal Patch |
+| 38 | Lozenge |
+| 39 | Pill |
+| 40 | Non Smokable Infused Extract |
+| 42 | Ethanol/Alcohol Extract |
+| 45 | Liquid Marijuana RSO |
+| 46 | CO2 Extract |
+| 62 | Vape Cartridge |
+
+**Usage:** Call `get_product_display_name(item_info)` from `utils.inventory_types` to get the display name (productname if present, otherwise `strain - inventory_type`).
 
 ---
 
@@ -530,6 +577,74 @@ manifest_id = post_manifest(
 - Used in trip execution (`utils/trip_execution.py`) to create manifests for delivery trips
 - Manifest ID is stored in the `trip_order.manifest_id` field
 - Route information is generated using Google Maps API and included in the manifest
+
+---
+
+#### `post_inventory_adjust(token: str, data: Union[Dict[str, Any], List[Dict[str, Any]]]) -> Optional[Dict[str, Any]]`
+
+Adjusts the quantity of one or more inventory items. The API accepts a single adjustment node or an array of nodes in one request.
+
+**Parameters:**
+- `token` (str): Authentication token
+- `data` (Dict or List[Dict]): One node (dict) or list of nodes. Each node contains:
+  - `barcodeid` (str, required): Inventory barcode identifier
+  - `quantity` (str, optional if `remove_quantity` provided): New quantity to set the inventory to (decimal)
+  - `remove_quantity` (str, optional if `quantity` provided): Quantity to remove (decimal). Does not need to be the full remaining quantity; can be a partial removal. The API prioritizes `remove_quantity` over `quantity` when both are present.
+  - `reason` (str, optional): Text explanation for the adjustment
+  - `type` (str, required): Adjustment reason type code (see below)
+  - `quantity_uom` / `remove_quantity_uom` (str, optional): Unit of measure — `g`, `mg`, `kg`, `oz`, `lb`, or `each`
+
+**Adjustment type codes:**
+- `2` — Theft
+- `3` — Seizure by Federal, State, Local or Tribal Law Enforcement
+- `4` — Correcting a mistake
+- `5` — Moisture loss (e.g. wet other plant material)
+
+**Returns:**
+- `Dict`: Response with `sessiontime`, `success`, `transactionid` on success
+- `None`: If request failed
+
+**API Action:** `inventory_adjust`
+
+**Request pattern (util):** The helper normalizes input to an array: a single dict is wrapped in a list, then sent as `{"data": nodes}` so the API always receives an array of 1 or more nodes.
+
+**Example — single adjustment (set quantity to 0):**
+```python
+from biotrack_util import get_auth_token, post_inventory_adjust
+
+token = get_auth_token()
+if token:
+    node = {
+        "barcodeid": "6853296789574115",
+        "quantity": "0",
+        "reason": "Sublot Error - Order Fulfillment",
+        "type": "4"
+    }
+    r = post_inventory_adjust(token, node)
+```
+
+**Example — bulk adjustment (many barcodes, same quantity and reason):**
+```python
+barcodes = ["4805469011436987", "6992985515974772"]  # e.g. from file
+nodes = [
+    {"barcodeid": b, "quantity": "0", "reason": "Sublot Error - Order Fulfillment", "type": "4"}
+    for b in barcodes
+]
+r = post_inventory_adjust(token, nodes)
+```
+
+**Example API Response:**
+```json
+{
+    "sessiontime": "1384476925",
+    "success": "1",
+    "transactionid": "3278"
+}
+```
+
+**Usage in Application:**
+- Single-item adjust: use a dict for `data`. CLI: `python app.py adjust --barcode <id> --quantity 0 --reason "..."`.
+- Bulk adjust: build a list of nodes (same `quantity`, `reason`, `type` per item). CLI: `python app.py adjust_bulk --file barcodes.md --quantity 0 --reason "Sublot Error - Order Fulfillment"` to adjust all barcodes in the file to 0 with that reason.
 
 ---
 

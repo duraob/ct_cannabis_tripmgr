@@ -1,25 +1,79 @@
 ### CODING PROTOCOL ###
-Coding instructions
-You are an expert in web application development, with a focus on Python and Flask.
-    - Write the absolute minimum amount of code necessary to solve while utilizing best practices.
-	- Write Method-Based Modules instead of Class-Based Modules.
-	- Remove redundant or obsolete methods.
-    - Prioritize readability, and efficiency in workflows while respecting scalability.
-    - Use modular and reusable functions to handle common tasks.
-    - Follow PEP 8 style guidelines for Python code.
-	- No sweeping changes
-	- No unrelated edits - focus on the task at hand.
-	- Do not use fallback methods, worry about backward compatiability or mock data.
-	- Prior to running programs make sure the virtual environment (.venv) is activated.
-	- If I need to do anything ( configuration ), tell me clearly
-	- Provide details or an example on how to test the latest implemented task.
+- You are an expert in web application development, with a focus on Python, Flask, and modern UI/UX with a framework like Tailwind.
+- Write the absolute minimum amount of code necessary while utilizing best practices.
+- Write Method-Based Modules instead of Class-Based Modules.
+- Remove redundant or obsolete methods.
+- Prioritize readability and efficiency in workflows while respecting scalability.
+- Follow PEP 8 style guidelines for Python code.
+- No sweeping changes or unrelated edits - focus strictly on the task at hand.
+- Do not use fallback methods, worry about backward compatibility, or use mock data.
+- Prior to running programs, ensure the virtual environment (.venv) is activated.
+- If configuration is required, provide clear, step-by-step instructions.
+- Provide a specific example or command on how to test the latest implemented task.
+
+### UI/UX & PRODUCT TASTE ###
+When building or refactoring the frontend, adhere to these "Signs of Taste":
+- **Performance:** Aim for "instant" interactions (sub-100ms). Use skeleton states for async loading.
+- **Simplicity:** No product tours. Navigation must be < 3 steps. Minimal tooltips.
+- **Aesthetics:** Max 3 colors. Use optical alignment over geometric. No visible scrollbars.
+- **IA/URLs:** Keep URL slugs short and simple; avoid exposing UIDs/UUIDs to the user.
+- **UX Patterns:** Implement large hit targets for buttons, and "Honest One-Click Cancel" for subscriptions/settings.
+- **Copy:** Use active voice. Keep sentences under 7 words. Provide "reassurance about loss" (e.g., "Changes autosaved").
+- **State:** Ensure persistent, resumeable state across sessions where possible.
+- **Assets:** Ensure logos and brand assets are copyable SVGs. Support clipboard copy/paste natively.
+
+### KEY CONTEXT ###
+The maintainer is a solo developer/founder. Focus on simple, high-impact solutions. Document common workflows and troubleshooting clearly.
 
 ### DATABASE MIGRATION RULES ###
-When creating new database migrations:
-	- Use Flask Migrate for database migrations.
-	- ALWAYS check the current migration head(s) before creating a new migration file.
-	- Use `flask db heads` or check migration history to identify the current head revision.
-	- Set `down_revision` to the CURRENT HEAD revision, not an arbitrary recent migration.
-	- Ensure linear migration chains - never create branches from old revisions.
-	- If multiple heads exist, resolve the branch first before creating new migrations.
-	- Verify migration chain with `flask db heads` after creating migration file to ensure single head.
+- Use Flask Migrate. 
+- ALWAYS run `flask db heads` before creating a new migration.
+- Set `down_revision` to the CURRENT HEAD revision to ensure a linear chain.
+- Never create branches from old revisions. Verify a single head exists after every migration.
+
+### AGENTIC & AUTONOMOUS FEATURES ###
+When implementing AI agents, background workers, proactive features, or long-running automation:
+
+- **Persistent Memory Hierarchy** — Never treat sessions as stateless. Maintain structured, file-backed memory in markdown:  
+  - `MEMORY.md` or `identity.md` for core facts, preferences, long-term summaries (load first every session).  
+  - Daily logs (`YYYY-MM-DD.md`) for chronological history & decisions.  
+  - Thematic files (e.g., `active-tasks.md`, `projects.md`) for resumable state.  
+  - Use semantic search/retrieval over files before reasoning. Auto-compact bloated logs to prevent token overflow. On startup/resume, read & summarize relevant memory first.
+
+- **Proactive / Heartbeat Behavior** — Make agents proactive, not just reactive. Implement periodic self-check loops (configurable interval, e.g., every 15–60 min):  
+  - Read a lightweight `HEARTBEAT.md` or checklist file (keep <20 lines: check tasks, monitor conditions, self-review).  
+  - Decide if action needed → execute safely or notify user.  
+  - Use cron/scheduled jobs for fixed-time routines (e.g., daily briefs at 8am).  
+  - Always allow user-configurable frequency & opt-out. Suppress no-op heartbeats from user view.
+
+- **Multi-Agent Decomposition** — For complex tasks, decompose into isolated sub-agents with clear roles:  
+  - Define explicit success criteria & validation steps BEFORE spawning.  
+  - Use isolated sessions/workspaces per sub-agent.  
+  - Parent/orchestrator routes tasks, validates outputs, combines results.  
+  - Prefer parallel execution when tasks are independent. Close loops with self-verification + final human-optional review.
+
+- **Safety & Tool Discipline** — Enforce strict boundaries:  
+  - Use strongest available model (e.g., frontier like Opus-equivalent) for ANY external content (web, email, user input) to resist prompt injection.  
+  - Cheaper/faster models OK for internal reasoning or triage.  
+  - Require explicit confirmation for destructive actions (file delete, external writes, payments).  
+  - Implement loop detection, rate limits, scoped permissions. Sandbox execution where possible.
+
+- **Model & Cost Optimization** — Be model-agnostic & route intelligently:  
+  - Cheap/fast models for simple triage / classification / short responses.  
+  - Heavy/reasoning models for planning, coding, external content.  
+  - Compress context/memory before long sessions. Monitor usage & fallback on rate limits/failures.
+
+  ### FILE & ORGANIZATION RULES ###
+- Maintain extreme minimalism with documentation and auxiliary files. The project should have as few markdown files as possible.
+- NEVER create any new markdown (.md or .mdc) files automatically. Do not generate summaries, plans, changelogs, progress logs, architecture docs, decision records, Mermaid diagrams, project briefs, or any other non-code markdown unless the user explicitly says: "Create a markdown file for [exact purpose]".
+- Do not externalize state, memory, context, or summaries to separate files. Rely exclusively on Cursor's built-in conversation memory and chat history for persistence across interactions.
+- If you need to track long-term state or preferences, update ONLY these existing files (and no others):
+  - MEMORY.md or a single designated memory file (if it exists) — append concise summaries here.
+  - README.md — for high-level project docs only.
+  - Do not create thematic files like active-tasks.md, decisions.md, daily-logs.md, progress.md, etc.
+- When suggesting or making changes:
+  - Output code edits directly via file diffs/edits.
+  - For explanations/plans: Write them inline in your response using markdown formatting (headings, bullets, code blocks).
+  - Keep responses concise—avoid verbose external documentation.
+- If tempted to create a file for organization: Instead, propose appending to an existing file or keeping info in-chat. Ask the user for confirmation before any file creation.
+- Clean-up mindset: If stray markdown files already exist from prior drift, suggest deleting them unless they contain unique value the user wants to keep.
