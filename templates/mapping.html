@@ -121,47 +121,55 @@
             <h3 class="text-lg font-semibold text-gray-900">Current Mappings</h3>
         </div>
         <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
+            <!-- table-fixed with explicit column widths: the table always fits its
+                 container and long names wrap instead of forcing a horizontal scroll. -->
+            <table class="w-full table-fixed divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors duration-200" 
+                        <th style="width:26%" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors duration-200"
                             onclick="sortTable('customer')">
-                            <div class="flex items-center justify-between">
-                                <span>Customer</span>
-                                <svg class="w-4 h-4 text-gray-400 sort-icon" id="sort-customer" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <div class="flex items-start justify-between gap-1">
+                                <span>Customer
+                                    <span class="block font-normal normal-case text-gray-400" style="font-size:10px">from LeafTrade</span>
+                                </span>
+                                <svg class="w-4 h-4 flex-shrink-0 text-gray-400 sort-icon" id="sort-customer" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
                                 </svg>
                             </div>
                         </th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors duration-200" 
+                        <th style="width:26%" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors duration-200"
                             onclick="sortTable('vendor')">
-                            <div class="flex items-center justify-between">
-                                <span>Vendor</span>
-                                <svg class="w-4 h-4 text-gray-400 sort-icon" id="sort-vendor" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <div class="flex items-start justify-between gap-1">
+                                <span>Vendor
+                                    <span class="block font-normal normal-case text-gray-400" style="font-size:10px">from BioTrack</span>
+                                </span>
+                                <svg class="w-4 h-4 flex-shrink-0 text-gray-400 sort-icon" id="sort-vendor" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
                                 </svg>
                             </div>
                         </th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors duration-200" 
+                        <th style="width:20%" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors duration-200"
                             onclick="sortTable('room')">
-                            <div class="flex items-center justify-between">
-                                <span>Default Room</span>
-                                <svg class="w-4 h-4 text-gray-400 sort-icon" id="sort-room" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <div class="flex items-start justify-between gap-1">
+                                <span>Default Room
+                                    <span class="block font-normal normal-case text-gray-400" style="font-size:10px">from BioTrack</span>
+                                </span>
+                                <svg class="w-4 h-4 flex-shrink-0 text-gray-400 sort-icon" id="sort-room" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
                                 </svg>
                             </div>
                         </th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors duration-200" 
-                            onclick="sortTable('status')">
-                            <div class="flex items-center justify-between">
+                        <th style="width:9%" class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors duration-200"
+                            onclick="sortTable('status')" title="Sort by status">
+                            <div class="flex items-center justify-center gap-1">
                                 <span>Status</span>
-                                <svg class="w-4 h-4 text-gray-400 sort-icon" id="sort-status" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg class="w-4 h-4 flex-shrink-0 text-gray-400 sort-icon" id="sort-status" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
                                 </svg>
                             </div>
                         </th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Manifest Contacts</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                        <th style="width:11%" class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Contacts</th>
+                        <th style="width:8%" class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="mapping-tbody" class="bg-white divide-y divide-gray-200">
@@ -702,52 +710,31 @@ function renderMappings() {
         const row = document.createElement('tr');
         row.className = 'hover:bg-gray-50 transition-colors duration-200';
         row.innerHTML = `
-            <td class="px-6 py-4 whitespace-nowrap">
-                <div class="flex items-center">
-                    <div class="flex-shrink-0 h-10 w-10">
-                        <div class="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-                            <svg class="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
-                            </svg>
-                        </div>
-                    </div>
-                    <div class="ml-4">
-                        <div class="text-sm font-medium text-gray-900">${customer ? customer.customer_name : 'Unknown Customer'}</div>
-                        <div class="text-sm text-gray-500">${customer ? `${customer.name} (${customer.leaftrade_customer_id})` : ''}</div>
-                    </div>
-                </div>
+            <td class="px-4 py-3 align-top break-words">
+                <div class="text-sm font-medium text-gray-900">${customer ? customer.customer_name : 'Unknown Customer'}</div>
+                <div class="text-xs text-gray-500">${customer ? `${customer.name} (${customer.leaftrade_customer_id})` : ''}</div>
             </td>
-            <td class="px-6 py-4 whitespace-nowrap">
-                <div class="flex items-center">
-                    <div class="flex-shrink-0 h-10 w-10">
-                        <div class="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center">
-                            <svg class="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
-                            </svg>
-                        </div>
-                    </div>
-                    <div class="ml-4">
-                        <div class="text-sm font-medium text-gray-900">${vendor ? vendor.name : 'Unknown Vendor'}</div>
-                        <div class="text-sm text-gray-500">${vendor ? vendor.biotrack_vendor_id : ''}</div>
-                    </div>
-                </div>
+            <td class="px-4 py-3 align-top break-words">
+                <div class="text-sm font-medium text-gray-900">${vendor ? vendor.name : 'Unknown Vendor'}</div>
+                <div class="text-xs text-gray-500">${vendor ? vendor.biotrack_vendor_id : ''}</div>
             </td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+            <td class="px-4 py-3 align-top break-words text-sm text-gray-900">
                 ${room ? room.name : '<span class="text-gray-400">No room assigned</span>'}
             </td>
-            <td class="px-6 py-4 whitespace-nowrap">
-                <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full ${mapping.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
+            <td class="px-2 py-3 align-top text-center">
+                <span class="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${mapping.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
                     ${mapping.is_active ? 'Active' : 'Inactive'}
                 </span>
             </td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm">
+            <td class="px-2 py-3 align-top text-center text-sm">
                 <button onclick="openContacts(${mapping.id})"
-                        class="inline-flex items-center gap-2 px-3 py-1 rounded-md border ${mapping.contact_count > 0 ? 'border-gray-300 text-gray-700 hover:bg-gray-50' : 'border-red-300 text-red-700 hover:bg-red-50'}">
-                    ${mapping.contact_count > 0 ? mapping.contact_count + (mapping.contact_count === 1 ? ' contact' : ' contacts') : 'None — add'}
+                        title="${mapping.contact_count > 0 ? mapping.contact_count + ' manifest recipient(s)' : 'No manifest recipients - manifests cannot be emailed for this store'}"
+                        class="inline-flex items-center justify-center min-w-[2.5rem] px-2 py-1 rounded-md border text-xs ${mapping.contact_count > 0 ? 'border-gray-300 text-gray-700 hover:bg-gray-50' : 'border-red-300 text-red-700 hover:bg-red-50'}">
+                    ${mapping.contact_count > 0 ? mapping.contact_count : 'Add'}
                 </button>
             </td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                <div class="flex space-x-2">
+            <td class="px-2 py-3 align-top text-sm font-medium">
+                <div class="flex justify-center space-x-1">
                     <button onclick="editMapping(${mapping.id})"
                             class="text-blue-600 hover:text-blue-900 transition-colors duration-200" title="Edit">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
