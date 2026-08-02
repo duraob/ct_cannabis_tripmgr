@@ -46,6 +46,13 @@ class Trip(db.Model):
     vehicle = db.relationship('Vehicle', backref='trips', lazy=True)
     execution = db.relationship('TripExecution', backref='trip', uselist=False)
 
+    # Declared so autogenerate does not try to drop them - they were created directly
+    # in revision a1b2c3d4e5f6 and exist in the database already.
+    __table_args__ = (
+        db.Index('idx_trip_date_created', 'date_created'),
+        db.Index('idx_trip_execution_status', 'execution_status'),
+    )
+
 class Order(db.Model):
     """Order model representing orders from LeafTrade"""
     id = db.Column(db.Integer, primary_key=True)
@@ -75,16 +82,56 @@ class TripOrder(db.Model):
     # Vendor relationship for BioTrack integration
     vendor_id = db.Column(db.Integer, db.ForeignKey('vendor.id'), nullable=True)
     vendor = db.relationship('Vendor', backref='trip_orders')
+
+    # Exact dispensary mapping this stop resolved to. A BioTrack license can be shared by
+    # more than one LeafTrade location, so the vendor alone does not identify the store's
+    # phone number or its manifest email contacts.
+    location_mapping_id = db.Column(db.Integer, db.ForeignKey('location_mapping.id'), nullable=True)
+    location_mapping = db.relationship('LocationMapping', backref='trip_orders')
     
     # Execution status tracking
     status = db.Column(db.String(20), default='pending')  # pending, sublotted, inventory_moved, manifested
     error_message = db.Column(db.Text, nullable=True)  # Order-specific error messages
+
+    # Manifest email audit. Records the most recent send so a stop cannot be re-sent
+    # unknowingly; recipients are snapshotted because contacts can change afterwards.
+    manifest_sent_at = db.Column(db.DateTime, nullable=True)
+    manifest_sent_to = db.Column(db.Text, nullable=True)  # comma separated To + CC
+    manifest_send_count = db.Column(db.Integer, default=0)
+
+    # Declared so autogenerate does not try to drop them - they were created directly
+    # in revision a1b2c3d4e5f6 and exist in the database already.
+    __table_args__ = (
+        db.Index('idx_trip_order_trip_id', 'trip_id'),
+        db.Index('idx_trip_order_vendor_id', 'vendor_id'),
+        db.Index('idx_trip_order_order_id', 'order_id'),
+        db.Index('idx_trip_order_status', 'status'),
+    )
+
+class TripOrderItem(db.Model):
+    """LeafTrade line item captured at execution, paired with the BioTrack sublot created for it.
+
+    Written by trip execution after a successful inventory_split, by zipping the filtered
+    request list against the returned barcode IDs (BioTrack returns them in input order).
+    The sublot barcode is what prints as 'Batch / Lot ID' on the manifest.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    trip_order_id = db.Column(db.Integer, db.ForeignKey('trip_order.id'), nullable=False)
+    product_name = db.Column(db.String(300))
+    quantity = db.Column(db.Integer)
+    line_total = db.Column(db.Numeric(12, 2))  # LeafTrade net line total at execution time
+    parent_barcode_id = db.Column(db.String(50))  # BioTrack parent lot (LeafTrade batch_ref)
+    sublot_barcode_id = db.Column(db.String(50), nullable=True)  # BioTrack sublot UID
+    created_at = db.Column(db.DateTime, default=get_est_now_naive)
+
+    trip_order = db.relationship('TripOrder', backref='items')
 
 class Driver(db.Model):
     """Driver model representing drivers from BioTrack"""
     id = db.Column(db.Integer, primary_key=True)
     biotrack_id = db.Column(db.String(100), unique=True)
     name = db.Column(db.String(200), nullable=False)
+    dob = db.Column(db.String(10))  # MM/DD/YYYY as printed on the manifest
     is_active = db.Column(db.Boolean, default=True)
 
 class Vehicle(db.Model):
@@ -92,6 +139,12 @@ class Vehicle(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     biotrack_id = db.Column(db.String(100), unique=True)
     name = db.Column(db.String(200), nullable=False)
+    vin = db.Column(db.String(50))
+    color = db.Column(db.String(50))
+    make = db.Column(db.String(100))
+    model = db.Column(db.String(100))
+    plate = db.Column(db.String(50))
+    year = db.Column(db.String(10))
     is_active = db.Column(db.Boolean, default=True)
 
 class Vendor(db.Model):
@@ -101,6 +154,12 @@ class Vendor(db.Model):
     name = db.Column(db.String(200), nullable=False)
     license_info = db.Column(db.String(500))
     ubi = db.Column(db.String(100))  # UBI for manifest creation
+    # Registered licensed premises, printed as the manifest destination address
+    address1 = db.Column(db.String(300))
+    address2 = db.Column(db.String(300))
+    city = db.Column(db.String(100))
+    state = db.Column(db.String(50))
+    zip = db.Column(db.String(20))
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=get_est_now_naive)
     updated_at = db.Column(db.DateTime, default=get_est_now_naive, onupdate=get_est_now_naive)
@@ -144,7 +203,28 @@ class LocationMapping(db.Model):
     # Relationships
     customer = db.relationship('Customer', backref='location_mappings')
     
-    __table_args__ = (db.UniqueConstraint('leaftrade_dispensary_location_id', 'biotrack_vendor_id', name='unique_location_mapping'),)
+    # The two indexes were created directly in revision a1b2c3d4e5f6 and exist in the
+    # database already; they are declared here so autogenerate does not try to drop them.
+    __table_args__ = (
+        db.UniqueConstraint('leaftrade_dispensary_location_id', 'biotrack_vendor_id', name='unique_location_mapping'),
+        db.Index('idx_location_mapping_dispensary_id', 'leaftrade_dispensary_location_id'),
+        db.Index('idx_location_mapping_vendor_id', 'biotrack_vendor_id'),
+    )
+
+class EmailContact(db.Model):
+    """Manifest email recipients.
+
+    location_mapping_id set  -> 'To' recipient for that dispensary location.
+    location_mapping_id NULL -> internal staff CC'd on every manifest send.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    location_mapping_id = db.Column(db.Integer, db.ForeignKey('location_mapping.id'), nullable=True)
+    name = db.Column(db.String(200))
+    email = db.Column(db.String(200), nullable=False)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=get_est_now_naive)
+
+    location_mapping = db.relationship('LocationMapping', backref='email_contacts')
 
 class APIRefreshLog(db.Model):
     """Track when API data was last refreshed"""

@@ -8,7 +8,8 @@
         <div class="sm:flex-auto">
             <h1 class="text-xl font-semibold text-gray-900">Trips</h1>
             <p class="mt-2 text-sm text-gray-700">
-                A list of all delivery trips in the system including their status, assigned drivers, and vehicles.
+                All delivery trips, with status, assigned drivers and vehicles.
+                <a href="{{ url_for('help') }}#trip-status" class="text-blue-600 hover:text-blue-800 underline">What do the statuses mean?</a>
             </p>
         </div>
         <div class="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
@@ -19,18 +20,24 @@
         </div>
     </div>
     
-    <div class="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-        <h2 class="text-sm font-semibold text-gray-900 mb-2">Trip status guide</h2>
-        <dl class="text-sm text-gray-700 space-y-1.5">
-            <div><dt class="inline font-medium">Pending</dt><dd class="inline"> — Trip created; awaiting validation and execution.</dd></div>
-            <div><dt class="inline font-medium">Validated</dt><dd class="inline"> — Pre-checks passed (e.g. different drivers, inventory available for fulfillment). Ready to execute.</dd></div>
-            <div><dt class="inline font-medium">Partially completed</dt><dd class="inline"> — Some BioTrack steps ran (e.g. inventory sublotted) but manifest or another step failed. Check BioTrack before retrying or closing.</dd></div>
-            <div><dt class="inline font-medium">Completed</dt><dd class="inline"> — All orders sublotted and manifested successfully.</dd></div>
-            <div><dt class="inline font-medium">Closed</dt><dd class="inline"> — Trip is inactive; closed to prevent accidental execution.</dd></div>
-        </dl>
+    <div class="mt-6 border-b border-gray-200">
+        <nav class="-mb-px flex gap-6" aria-label="Trip filter">
+            <button type="button" id="tab-active" onclick="setTripFilter('active')"
+                    class="trip-tab whitespace-nowrap border-b-2 py-3 px-1 text-sm font-medium">
+                Active <span id="count-active" class="ml-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">0</span>
+            </button>
+            <button type="button" id="tab-completed" onclick="setTripFilter('completed')"
+                    class="trip-tab whitespace-nowrap border-b-2 py-3 px-1 text-sm font-medium">
+                Completed <span id="count-completed" class="ml-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">0</span>
+            </button>
+            <button type="button" id="tab-all" onclick="setTripFilter('all')"
+                    class="trip-tab whitespace-nowrap border-b-2 py-3 px-1 text-sm font-medium">
+                All <span id="count-all" class="ml-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">0</span>
+            </button>
+        </nav>
     </div>
 
-    <div class="mt-8 flex flex-col">
+    <div class="mt-4 flex flex-col">
         <div class="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
             <div class="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
                 <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
@@ -184,53 +191,6 @@ async function validateTrip(tripId) {
     } catch (error) {
         hideLoading();
         showErrorMessage(`Error validating trip: ${error.message}`);
-    }
-}
-
-async function changeTripStatus(tripId, newStatus, currentStatus, selectElement) {
-    if (newStatus === currentStatus) {
-        return;
-    }
-    
-    if (!confirm(`Are you sure you want to change the trip status from ${currentStatus} to ${newStatus}?`)) {
-        // Reset dropdown to current status
-        selectElement.value = currentStatus;
-        return;
-    }
-    
-    showLoading('Updating Trip Status...');
-    
-    try {
-        const response = await fetch(`/trips/${tripId}/toggle-status`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                new_status: newStatus
-            })
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-            hideLoading();
-            showSuccessMessage(`Trip status updated to ${newStatus}!`);
-            setTimeout(() => {
-                loadTripsData(); // Reload trips data to show updated status
-            }, 1000);
-        } else {
-            hideLoading();
-            showErrorMessage(`Error updating trip status: ${result.error}`);
-            // Reset dropdown to current status on error
-            selectElement.value = currentStatus;
-        }
-        
-    } catch (error) {
-        hideLoading();
-        showErrorMessage(`Error updating trip status: ${error.message}`);
-        // Reset dropdown to current status on error
-        selectElement.value = currentStatus;
     }
 }
 
@@ -515,8 +475,13 @@ function showErrorMessage(message) {
 let currentSort = { column: null, direction: 'asc' };
 let tripsData = [];
 
+// Trips still needing work vs. trips that are finished or parked.
+const ACTIVE_STATUSES = ['pending', 'validated', 'partially_completed'];
+let currentFilter = 'active';
+
 // Load trips data when page loads
 document.addEventListener('DOMContentLoaded', function() {
+    setTripFilter(currentFilter);
     loadTripsData();
 });
 
@@ -525,10 +490,54 @@ async function loadTripsData() {
         const response = await fetch('/api/trips');
         const data = await response.json();
         tripsData = data.trips || data;
+        updateTripCounts();
         renderTrips();
     } catch (error) {
         // Silent error handling - user will see empty state
     }
+}
+
+function isActiveTrip(trip) {
+    return ACTIVE_STATUSES.includes(trip.status);
+}
+
+/** Trips for the selected tab. Until the user picks a column, surface
+ *  partially completed trips first — they need a human to resolve BioTrack. */
+function getVisibleTrips() {
+    let trips = tripsData;
+    if (currentFilter === 'active') {
+        trips = trips.filter(isActiveTrip);
+    } else if (currentFilter === 'completed') {
+        trips = trips.filter(t => !isActiveTrip(t));
+    }
+    if (currentSort.column === null) {
+        trips = [...trips].sort((a, b) => {
+            const aNeedsAttention = a.status === 'partially_completed' ? 0 : 1;
+            const bNeedsAttention = b.status === 'partially_completed' ? 0 : 1;
+            return aNeedsAttention - bNeedsAttention;
+        });
+    }
+    return trips;
+}
+
+function updateTripCounts() {
+    const activeCount = tripsData.filter(isActiveTrip).length;
+    document.getElementById('count-active').textContent = activeCount;
+    document.getElementById('count-completed').textContent = tripsData.length - activeCount;
+    document.getElementById('count-all').textContent = tripsData.length;
+}
+
+function setTripFilter(filter) {
+    currentFilter = filter;
+    document.querySelectorAll('.trip-tab').forEach(tab => {
+        const selected = tab.id === `tab-${filter}`;
+        tab.classList.toggle('border-blue-500', selected);
+        tab.classList.toggle('text-blue-600', selected);
+        tab.classList.toggle('border-transparent', !selected);
+        tab.classList.toggle('text-gray-500', !selected);
+        tab.setAttribute('aria-current', selected ? 'page' : 'false');
+    });
+    renderTrips();
 }
 
 function sortTable(column) {
@@ -619,10 +628,18 @@ function sortTable(column) {
 function renderTrips() {
     const tbody = document.querySelector('tbody');
     if (!tbody) return;
-    
+
     tbody.innerHTML = '';
 
-    if (tripsData.length === 0) {
+    const visibleTrips = getVisibleTrips();
+
+    if (visibleTrips.length === 0) {
+        const emptyTitle = tripsData.length === 0 ? 'No trips'
+            : currentFilter === 'active' ? 'No active trips'
+            : 'No completed trips';
+        const emptyBody = tripsData.length === 0 ? 'Get started by creating a new trip.'
+            : currentFilter === 'active' ? 'Every trip is completed or closed. Nothing needs attention.'
+            : 'No trips have been completed or closed yet.';
         tbody.innerHTML = `
             <tr>
                 <td colspan="7" class="px-6 py-12 text-center">
@@ -630,10 +647,10 @@ function renderTrips() {
                         <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
                         </svg>
-                        <h3 class="mt-2 text-sm font-medium text-gray-900">No trips</h3>
-                        <p class="mt-1 text-sm text-gray-500">Get started by creating a new trip.</p>
+                        <h3 class="mt-2 text-sm font-medium text-gray-900">${emptyTitle}</h3>
+                        <p class="mt-1 text-sm text-gray-500">${emptyBody}</p>
                         <div class="mt-6">
-                            <a href="/trips/new" 
+                            <a href="/trips/new"
                                class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
                                 <svg class="-ml-1 mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -648,7 +665,7 @@ function renderTrips() {
         return;
     }
 
-    tripsData.forEach(trip => {
+    visibleTrips.forEach(trip => {
         const row = document.createElement('tr');
         row.className = 'hover:bg-gray-50 transition-colors duration-200';
         
@@ -676,15 +693,7 @@ function renderTrips() {
                                               'bg-gray-100 text-gray-800'}">
                         ${trip.status.charAt(0).toUpperCase() + trip.status.slice(1).replace('_', ' ')}
                     </span>
-                    ${trip.execution_status === 'failed' && trip.inventory_processed_in_biotrack ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Inventory moved</span>' : ''}
-                    <select onchange="changeTripStatus(${trip.id}, this.value, '${trip.status}', this)" 
-                            class="text-xs border border-gray-300 rounded-md px-2 py-1 bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        <option value="pending" ${trip.status === 'pending' ? 'selected' : ''}>Pending</option>
-                        <option value="validated" ${trip.status === 'validated' ? 'selected' : ''}>Validated</option>
-                        <option value="completed" ${trip.status === 'completed' ? 'selected' : ''}>Completed</option>
-                        <option value="partially_completed" ${trip.status === 'partially_completed' ? 'selected' : ''}>Partially Completed</option>
-                        <option value="closed" ${trip.status === 'closed' ? 'selected' : ''}>Closed</option>
-                    </select>
+                    ${trip.inventory_processed_in_biotrack && trip.status !== 'completed' ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800" title="This trip already sublotted or moved inventory in BioTrack. Re-executing would duplicate it.">Inventory moved</span>' : ''}
                 </div>
             </td>
             <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">

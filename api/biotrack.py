@@ -252,10 +252,18 @@ def get_driver_info(token: str) -> Optional[Dict[str, Dict[str, Any]]]:
                     driver_name = driver.get("employee_name", "Unknown")
                     # 'deleted' field is 0 for active drivers, 1 for deleted (same as vehicles)
                     driver_is_active = 1 if driver.get("deleted") == 0 else 0
-                    
+
+                    # BioTrack splits date of birth across three fields; the manifest
+                    # prints it as MM/DD/YYYY so store it pre-formatted.
+                    month = driver.get("birthmonth")
+                    day = driver.get("birthday")
+                    year = driver.get("birthyear")
+                    dob = f"{month}/{day}/{year}" if month and day and year else None
+
                     if driver_id:
                         driver_dict[driver_id] = {
                             "name": driver_name,
+                            "dob": dob,
                             "is_active": driver_is_active
                         }
                 except KeyError as e:
@@ -327,6 +335,12 @@ def get_vehicle_info(token: str) -> Optional[Dict[str, Dict[str, Any]]]:
                     if vehicle_id:
                         vehicle_dict[vehicle_id] = {
                             "name": vehicle_name,
+                            "vin": vehicle.get("vin"),
+                            "color": vehicle.get("color"),
+                            "make": vehicle.get("make"),
+                            "model": vehicle.get("model"),
+                            "plate": vehicle.get("plate"),
+                            "year": vehicle.get("year"),
                             "is_active": vehicle_is_active
                         }
                 except KeyError as e:
@@ -393,7 +407,12 @@ def get_vendor_info(token: str) -> Optional[Dict[str, Dict[str, Any]]]:
                             vendor_dict[vendor_location] = {
                                 "name": vendor_name,
                                 "ubi": vendor_ubi,
-                                "license": vendor_location
+                                "license": vendor_location,
+                                "address1": vendor.get("address1"),
+                                "address2": vendor.get("address2"),
+                                "city": vendor.get("city"),
+                                "state": vendor.get("state"),
+                                "zip": vendor.get("zip")
                             }
                 except KeyError as e:
                     logger.warning(f"Vendor data missing required field: {e}")
@@ -493,7 +512,16 @@ def get_inventory_info(token: str) -> Optional[Dict[str, Dict[str, Any]]]:
     from app import get_training_mode
     
     training = get_training_mode()
-    
+
+    # Full inventory sync returns thousands of items; cache briefly so callers that
+    # request it repeatedly (order weight chunks, adjustments) reuse one pull.
+    from utils.cache import get as cache_get, set as cache_set
+    cache_key = f"biotrack_inventory_{training}"
+    cached_inventory = cache_get(cache_key)
+    if cached_inventory is not None:
+        logger.debug("Returning cached BioTrack inventory (%d items)", len(cached_inventory))
+        return cached_inventory
+
     data = {
         "API": "4.0",
         "action": "sync_inventory",
@@ -520,6 +548,7 @@ def get_inventory_info(token: str) -> Optional[Dict[str, Dict[str, Any]]]:
                     logger.warning(f"Inventory item data missing required field: {e}")
                     continue
             _last_inventory_error = None
+            cache_set(cache_key, inventory_dict, ttl_seconds=60)
             logger.info(f"Retrieved {len(inventory_dict)} inventory items from BioTrack")
             return inventory_dict
         else:
@@ -544,6 +573,13 @@ def get_inventory_info(token: str) -> Optional[Dict[str, Dict[str, Any]]]:
 def get_last_inventory_error():
     """Return the last error message from get_inventory_info, or None."""
     return _last_inventory_error
+
+
+def clear_inventory_cache():
+    """Drop the cached inventory sync. Call after any BioTrack inventory mutation."""
+    from utils.cache import clear as cache_clear
+    from app import get_training_mode
+    cache_clear(f"biotrack_inventory_{get_training_mode()}")
 
 
 def get_inventory_qa_check(token: str, barcode_id: str) -> Optional[Dict[str, Any]]:
@@ -812,6 +848,7 @@ def post_sublot_move(
         response_data = _make_api_request(data, "sublot_move")
         
         if response_data and str(response_data.get("success")) == "1":
+            clear_inventory_cache()
             logger.info("Successfully moved sublot(s)")
             return response_data
         else:
@@ -878,6 +915,7 @@ def post_sublot_bulk_create(
         
         if response_data and str(response_data.get("success")) == "1":
             sublot_ids = response_data.get("barcode_id", [])
+            clear_inventory_cache()
             logger.info(f"Successfully created {len(sublot_ids)} sublots in bulk")
             return sublot_ids
         else:
@@ -1045,6 +1083,7 @@ def post_inventory_adjust(
     try:
         response_data = _make_api_request(payload, "inventory_adjust")
         if response_data and str(response_data.get("success")) == "1":
+            clear_inventory_cache()
             logger.info("Successfully submitted inventory adjustment(s)")
             return response_data
         err_msg = (response_data or {}).get("error", "Unknown BioTrack error")

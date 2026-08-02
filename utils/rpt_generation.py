@@ -45,7 +45,7 @@ def generate_inventory_report_simple():
             
             # Generate CSV
             logger.info(f"Processing {len(inventory_data)} inventory items")
-            csv_content = _create_inventory_csv(inventory_data, room_lookup)
+            csv_content = _create_inventory_csv(inventory_data, room_lookup, token)
             
             # Save file
             filename = f"inventory_{datetime.now().strftime('%Y-%m-%d_%H-%M')}.csv"
@@ -94,7 +94,7 @@ def generate_finished_goods_report_simple():
             
             # Generate filtered CSV
             logger.info(f"Processing {len(inventory_data)} inventory items with filtering")
-            csv_content = _create_finished_goods_csv(inventory_data, room_lookup, selected_rooms)
+            csv_content = _create_finished_goods_csv(inventory_data, room_lookup, selected_rooms, token)
             
             # Save file
             filename = f"finished_goods_{datetime.now().strftime('%Y-%m-%d_%H-%M')}.csv"
@@ -149,7 +149,7 @@ def _get_selected_rooms():
         return [room_id.strip() for room_id in rooms_str.split(',') if room_id.strip()]
     return []
 
-def _create_inventory_csv(inventory_data, room_lookup):
+def _create_inventory_csv(inventory_data, room_lookup, token):
     """Create inventory CSV content"""
     output = StringIO()
     writer = csv.writer(output)
@@ -174,10 +174,10 @@ def _create_inventory_csv(inventory_data, room_lookup):
             
             if barcode_id:
                 try:
-                    lab_results = get_inventory_qa_check(get_auth_token(), barcode_id)
+                    lab_results = get_inventory_qa_check(token, barcode_id)
                 except Exception:
                     lab_results = None
-            
+
             # Lab data fields
             if lab_results:
                 lab_data_available = 'Yes'
@@ -235,7 +235,7 @@ def _calculate_package_unit(inventory_type, product_name):
     else:
         return ''
 
-def _create_finished_goods_csv(inventory_data, room_lookup, selected_rooms):
+def _create_finished_goods_csv(inventory_data, room_lookup, selected_rooms, token):
     """Create finished goods CSV content with filtering"""
     output = StringIO()
     writer = csv.writer(output)
@@ -271,10 +271,10 @@ def _create_finished_goods_csv(inventory_data, room_lookup, selected_rooms):
             
             if barcode_id:
                 try:
-                    lab_results = get_inventory_qa_check(get_auth_token(), barcode_id)
+                    lab_results = get_inventory_qa_check(token, barcode_id)
                 except Exception:
                     lab_results = None
-            
+
             # Only include items with lab data (QA passed)
             if not lab_results:
                 continue

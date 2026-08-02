@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, Response
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
@@ -159,7 +159,7 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
 }
 
 # Import models and get db instance
-from models import db, User, Trip, Order, TripOrder, Driver, Vehicle, Vendor, Room, LocationMapping, Customer, GlobalPreference, TripExecution
+from models import db, User, Trip, Order, TripOrder, TripOrderItem, Driver, Vehicle, Vendor, Room, LocationMapping, Customer, GlobalPreference, TripExecution, EmailContact
 
 # Initialize extensions
 migrate = Migrate(app, db)
@@ -416,14 +416,12 @@ def new_trip():
                 return jsonify({'error': validation_result['message']}), 400
             
             logger.debug("Backend validation passed")
-            
-            # Get driver database IDs from biotrack_ids
-            driver1 = db.session.query(Driver).filter_by(biotrack_id=data['driver1_id']).first()
-            driver2 = db.session.query(Driver).filter_by(biotrack_id=data['driver2_id']).first() if data['driver2_id'] else None
-            
-            # Get vehicle database ID from biotrack_id
-            vehicle = db.session.query(Vehicle).filter_by(biotrack_id=str(data['vehicle_id'])).first()
-            
+
+            # Reuse the driver/vehicle rows the validator already resolved
+            driver1 = validation_result['driver1']
+            driver2 = validation_result['driver2']
+            vehicle = validation_result['vehicle']
+
             # Parse date and time with DST handling
             delivery_date = datetime.strptime(data['delivery_date'], '%Y-%m-%d').date()
             from utils.timezone import create_est_datetime_with_dst
@@ -452,6 +450,7 @@ def new_trip():
             for i, order_data in enumerate(data['orders']):
                 # Get order details to find dispensary location and vendor
                 vendor = None
+                location_mapping = None
                 try:
                     from api.leaftrade import get_order_details
                     order_details = get_order_details(order_data['order_id'])
@@ -485,7 +484,8 @@ def new_trip():
                     sequence_order=i + 1,
                     room_override=order_data.get('room_override'),
                     address=order_data.get('customer_location'),
-                    vendor_id=vendor.id if vendor else None
+                    vendor_id=vendor.id if vendor else None,
+                    location_mapping_id=location_mapping.id if location_mapping else None
                 )
                 db.session.add(trip_order)
                 logger.debug(f"Added trip order {i+1}: {order_data['order_id']} with vendor {vendor.name if vendor else 'None'}")
@@ -511,6 +511,8 @@ def validate_trip_data_backend(data):
     """
     Comprehensive backend validation for trip data
     Returns: {'is_valid': bool, 'message': str}
+    On success also returns the resolved 'driver1', 'driver2' and 'vehicle' rows
+    so the caller does not have to look them up again.
     """
     logger = logging.getLogger('app.validation')
     
@@ -630,7 +632,10 @@ def validate_trip_data_backend(data):
     logger.info("Backend validation passed successfully")
     return {
         'is_valid': True,
-        'message': 'Validation passed'
+        'message': 'Validation passed',
+        'driver1': driver1,
+        'driver2': driver2,
+        'vehicle': vehicle
     }
 
 @app.route('/trips/<int:trip_id>/execute', methods=['POST'])
@@ -790,6 +795,98 @@ def trip_progress(trip_id):
     trip = Trip.query.get_or_404(trip_id)
     return render_template('trip_progress.html', trip=trip)
 
+@app.route('/trips/<int:trip_id>/stops/<int:trip_order_id>/manifest.pdf')
+@login_required
+def trip_stop_manifest_pdf(trip_id, trip_order_id):
+    """Render the Connecticut transportation manifest for one stop."""
+    logger = logging.getLogger('app.trip_stop_manifest_pdf')
+
+    trip_order = TripOrder.query.filter_by(id=trip_order_id, trip_id=trip_id).first_or_404()
+
+    try:
+        from utils.manifest_pdf import build_manifest_pdf
+        pdf = build_manifest_pdf(trip_order.id)
+    except Exception as e:
+        logger.error(f"Failed to build manifest PDF for trip order {trip_order_id}: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 400
+
+    return Response(pdf, mimetype='application/pdf', headers={
+        'Content-Disposition': f'inline; filename=manifest_{trip_order.manifest_id}.pdf'
+    })
+
+@app.route('/api/trips/<int:trip_id>/stops/<int:trip_order_id>/email-preview')
+@login_required
+def manifest_email_preview(trip_id, trip_order_id):
+    """Recipients and rendered message for the send dialog."""
+    logger = logging.getLogger('app.manifest_email_preview')
+    try:
+        trip_order = TripOrder.query.filter_by(id=trip_order_id, trip_id=trip_id).first_or_404()
+
+        from api.email_service import get_recipients, render_template_text
+        to_addresses, cc_addresses = get_recipients(trip_order)
+
+        subject = render_template_text(
+            get_preference('manifest_email_subject', DEFAULT_EMAIL_SUBJECT), trip_order)
+        body = render_template_text(
+            get_preference('manifest_email_body', DEFAULT_EMAIL_BODY), trip_order)
+
+        return jsonify({
+            'success': True,
+            'to': to_addresses,
+            'cc': cc_addresses,
+            'subject': subject,
+            'body': body,
+            'manifest_id': trip_order.manifest_id,
+            'sent_at': trip_order.manifest_sent_at.strftime('%b %d, %Y at %I:%M %p')
+                       if trip_order.manifest_sent_at else None,
+            'sent_to': trip_order.manifest_sent_to,
+            'send_count': trip_order.manifest_send_count or 0,
+        })
+    except Exception as e:
+        logger.error(f"Failed to build email preview for trip order {trip_order_id}: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/trips/<int:trip_id>/stops/<int:trip_order_id>/send-manifest', methods=['POST'])
+@login_required
+def send_manifest(trip_id, trip_order_id):
+    """Send the manifest PDF for one stop, using the reviewed message from the dialog."""
+    logger = logging.getLogger('app.send_manifest')
+    try:
+        trip_order = TripOrder.query.filter_by(id=trip_order_id, trip_id=trip_id).first_or_404()
+        if not trip_order.manifest_id:
+            return jsonify({'error': 'This stop has no manifest yet - execute the trip first'}), 400
+
+        data = request.get_json() or {}
+        to_addresses = [a.strip() for a in (data.get('to') or []) if a.strip()]
+        cc_addresses = [a.strip() for a in (data.get('cc') or []) if a.strip()]
+
+        from api.email_service import send_manifest_email
+        result = send_manifest_email(
+            trip_order.id,
+            data.get('subject') or '',
+            data.get('body') or '',
+            to_addresses,
+            cc_addresses,
+        )
+
+        # Recorded only after Graph accepts the message, so the audit trail never
+        # claims a send that did not happen.
+        trip_order.manifest_sent_at = get_est_now_naive()
+        trip_order.manifest_sent_to = ', '.join(to_addresses + cc_addresses)
+        trip_order.manifest_send_count = (trip_order.manifest_send_count or 0) + 1
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'message': f"Manifest sent to {result['to_count']} recipient(s), "
+                       f"{result['cc_count']} CC'd"
+        })
+    except Exception as e:
+        logger.error(f"Failed to send manifest for trip order {trip_order_id}: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 400
+
+
 @app.route('/api/error-logs', methods=['GET'])
 @login_required
 def get_error_logs():
@@ -942,8 +1039,7 @@ def get_orders():
         return jsonify({'orders': orders_array, 'order_weights': order_weights})
     except Exception as e:
         logger.error(f"Exception in get_orders: {str(e)}", exc_info=True)
-        mock_orders = [{'id': '1043337', 'customer_name': 'Budr - Danbury MILL PLAIN RD - MED', 'customer_location': 'Budr - Danbury MILL PLAIN RD - MED - 2025-08-01', 'delivery_date': '2025-08-01', 'dispensary_id': '1280', 'total_usable_weight': 0.0}]
-        return jsonify({'orders': mock_orders, 'order_weights': {'1043337': 0.0}})
+        return jsonify({'error': f'Failed to fetch orders from LeafTrade: {str(e)}'}), 500
 
 
 @app.route('/api/orders/weights')
@@ -1182,17 +1278,6 @@ def get_drivers():
             })
         
         logger.info(f"Returning {len(drivers_array)} cached drivers")
-        
-        # If no cached drivers, provide mock data for testing
-        if len(drivers_array) == 0:
-            logger.info("No cached drivers found, providing mock data for testing")
-            mock_drivers = [
-                {'id': '1', 'name': 'John Smith', 'is_active': True},
-                {'id': '2', 'name': 'Jane Doe', 'is_active': True},
-                {'id': '3', 'name': 'Mike Johnson', 'is_active': True}
-            ]
-            return jsonify({'drivers': mock_drivers})
-        
         return jsonify({'drivers': drivers_array})
         
     except Exception as e:
@@ -1231,11 +1316,13 @@ def refresh_drivers():
             existing_driver = db.session.query(Driver).filter_by(biotrack_id=driver_id).first()
             if existing_driver:
                 existing_driver.name = driver_info['name']
+                existing_driver.dob = driver_info['dob']
                 existing_driver.is_active = bool(driver_info['is_active'])
             else:
                 new_driver = Driver(
                     biotrack_id=driver_id,
                     name=driver_info['name'],
+                    dob=driver_info['dob'],
                     is_active=bool(driver_info['is_active'])
                 )
                 db.session.add(new_driver)
@@ -1281,17 +1368,6 @@ def get_vehicles():
             })
         
         logger.info(f"Returning {len(vehicles_array)} cached vehicles")
-        
-        # If no cached vehicles, provide mock data for testing
-        if len(vehicles_array) == 0:
-            logger.info("No cached vehicles found, providing mock data for testing")
-            mock_vehicles = [
-                {'id': '1', 'name': 'Van 1', 'is_active': True},
-                {'id': '2', 'name': 'Van 2', 'is_active': True},
-                {'id': '3', 'name': 'Truck 1', 'is_active': True}
-            ]
-            return jsonify({'vehicles': mock_vehicles})
-        
         return jsonify({'vehicles': vehicles_array})
         
     except Exception as e:
@@ -1330,11 +1406,23 @@ def refresh_vehicles():
             existing_vehicle = db.session.query(Vehicle).filter_by(biotrack_id=vehicle_id).first()
             if existing_vehicle:
                 existing_vehicle.name = vehicle_info['name']
+                existing_vehicle.vin = vehicle_info['vin']
+                existing_vehicle.color = vehicle_info['color']
+                existing_vehicle.make = vehicle_info['make']
+                existing_vehicle.model = vehicle_info['model']
+                existing_vehicle.plate = vehicle_info['plate']
+                existing_vehicle.year = vehicle_info['year']
                 existing_vehicle.is_active = bool(vehicle_info['is_active'])
             else:
                 new_vehicle = Vehicle(
                     biotrack_id=vehicle_id,
                     name=vehicle_info['name'],
+                    vin=vehicle_info['vin'],
+                    color=vehicle_info['color'],
+                    make=vehicle_info['make'],
+                    model=vehicle_info['model'],
+                    plate=vehicle_info['plate'],
+                    year=vehicle_info['year'],
                     is_active=bool(vehicle_info['is_active'])
                 )
                 db.session.add(new_vehicle)
@@ -1562,6 +1650,11 @@ def refresh_vendors():
                 existing_vendor.name = vendor_info['name']
                 existing_vendor.license_info = vendor_info.get('license', '')
                 existing_vendor.ubi = vendor_info.get('ubi', '')  # Store UBI for manifest creation
+                existing_vendor.address1 = vendor_info.get('address1')
+                existing_vendor.address2 = vendor_info.get('address2')
+                existing_vendor.city = vendor_info.get('city')
+                existing_vendor.state = vendor_info.get('state')
+                existing_vendor.zip = vendor_info.get('zip')
                 existing_vendor.is_active = True  # All vendors from API are active
             else:
                 new_vendor = Vendor(
@@ -1569,6 +1662,11 @@ def refresh_vendors():
                     name=vendor_info['name'],
                     license_info=vendor_info.get('license', ''),
                     ubi=vendor_info.get('ubi', ''),  # Store UBI for manifest creation
+                    address1=vendor_info.get('address1'),
+                    address2=vendor_info.get('address2'),
+                    city=vendor_info.get('city'),
+                    state=vendor_info.get('state'),
+                    zip=vendor_info.get('zip'),
                     is_active=True  # All vendors from API are active
                 )
                 db.session.add(new_vendor)
@@ -1742,7 +1840,14 @@ def get_mappings():
     try:
         mappings = db.session.query(LocationMapping).all()
         mappings_data = []
-        
+
+        # Manifest recipient counts, so the table shows which stores have nobody to email
+        contact_counts = dict(
+            db.session.query(EmailContact.location_mapping_id, db.func.count(EmailContact.id))
+            .filter(EmailContact.location_mapping_id.isnot(None), EmailContact.is_active.is_(True))
+            .group_by(EmailContact.location_mapping_id).all()
+        )
+
         for mapping in mappings:
             mappings_data.append({
                 'id': mapping.id,
@@ -1750,6 +1855,7 @@ def get_mappings():
                 'biotrack_vendor_id': mapping.biotrack_vendor_id,
                 'default_biotrack_room_id': mapping.default_biotrack_room_id,
                 'is_active': mapping.is_active,
+                'contact_count': contact_counts.get(mapping.id, 0),
                 'created_at': mapping.created_at.isoformat() if mapping.created_at else None,
                 'updated_at': mapping.updated_at.isoformat() if mapping.updated_at else None
             })
@@ -2119,110 +2225,6 @@ def export_customers():
         logger.error(f"Error exporting customers: {str(e)}", exc_info=True)
         return jsonify({'error': f'Error exporting customers: {str(e)}'}), 500
 
-@app.route('/api/biotrack/refresh', methods=['POST'])
-@login_required
-def refresh_biotrack_data():
-    """Refresh all BioTrack data using current training mode"""
-    try:
-        logger = logging.getLogger('app.refresh_biotrack_data')
-        logger.info(f"Starting BioTrack data refresh in training mode: {get_training_mode()}")
-        
-        # Clear existing BioTrack data
-        db.session.query(Driver).delete()
-        db.session.query(Vehicle).delete()
-        db.session.query(Vendor).delete()
-        db.session.query(Room).delete()
-        db.session.commit()
-        logger.info("Cleared existing BioTrack data")
-        
-        # Refresh drivers
-        try:
-            from api.biotrack import get_driver_info
-            drivers_data = get_driver_info()
-            if drivers_data:
-                for driver in drivers_data:
-                    new_driver = Driver(
-                        biotrack_id=driver['id'],
-                        name=driver['name'],
-                        license_number=driver.get('license_number', ''),
-                        is_active=driver.get('is_active', True)
-                    )
-                    db.session.add(new_driver)
-                logger.info(f"Added {len(drivers_data)} drivers")
-        except Exception as e:
-            logger.error(f"Error refreshing drivers: {str(e)}")
-            return jsonify({'error': f'Error refreshing drivers: {str(e)}'}), 500
-        
-        # Refresh vehicles
-        try:
-            from api.biotrack import get_vehicle_info
-            vehicles_data = get_vehicle_info()
-            if vehicles_data:
-                for vehicle in vehicles_data:
-                    new_vehicle = Vehicle(
-                        biotrack_id=vehicle['id'],
-                        name=vehicle['name'],
-                        license_plate=vehicle.get('license_plate', ''),
-                        is_active=vehicle.get('is_active', True)
-                    )
-                    db.session.add(new_vehicle)
-                logger.info(f"Added {len(vehicles_data)} vehicles")
-        except Exception as e:
-            logger.error(f"Error refreshing vehicles: {str(e)}")
-            return jsonify({'error': f'Error refreshing vehicles: {str(e)}'}), 500
-        
-        # Refresh vendors
-        try:
-            from api.biotrack import get_vendor_info
-            vendors_data = get_vendor_info()
-            if vendors_data:
-                for vendor_location, vendor_info in vendors_data.items():
-                    new_vendor = Vendor(
-                        biotrack_vendor_id=vendor_location,
-                        name=vendor_info['name'],
-                        license_info=vendor_info.get('license', ''),
-                        ubi=vendor_info.get('ubi', ''),
-                        is_active=True
-                    )
-                    db.session.add(new_vendor)
-                logger.info(f"Added {len(vendors_data)} vendors")
-        except Exception as e:
-            logger.error(f"Error refreshing vendors: {str(e)}")
-            return jsonify({'error': f'Error refreshing vendors: {str(e)}'}), 500
-        
-        # Refresh rooms
-        try:
-            from api.biotrack import get_room_info
-            rooms_data = get_room_info()
-            if rooms_data:
-                for room in rooms_data:
-                    new_room = Room(
-                        biotrack_id=room['id'],
-                        name=room['name'],
-                        vendor_id=room.get('vendor_id'),
-                        is_active=room.get('is_active', True)
-                    )
-                    db.session.add(new_room)
-                logger.info(f"Added {len(rooms_data)} rooms")
-        except Exception as e:
-            logger.error(f"Error refreshing rooms: {str(e)}")
-            return jsonify({'error': f'Error refreshing rooms: {str(e)}'}), 500
-        
-        # Commit all changes
-        db.session.commit()
-        
-        logger.info("BioTrack data refresh completed successfully")
-        return jsonify({
-            'success': True,
-            'message': f'BioTrack data refreshed successfully in {"training" if is_training_mode() else "production"} mode'
-        })
-        
-    except Exception as e:
-        logger = logging.getLogger('app.refresh_biotrack_data')
-        logger.error(f"Error during BioTrack data refresh: {str(e)}", exc_info=True)
-        db.session.rollback()
-        return jsonify({'error': f'Error refreshing BioTrack data: {str(e)}'}), 500
-
 def process_order_sublots(leaftrade_order_id: str, target_room_id: str = None) -> dict:
     """
     Process a single LeafTrade order for sublot creation and movement.
@@ -2584,16 +2586,14 @@ def validate_trip(trip_id):
                     validation_errors.append('Failed to retrieve inventory data from BioTrack')
                 else:
                     validation_summary.append(f'✓ BioTrack inventory data retrieved')
-                    
+
+                    # Index inventory by item id once, then look up each required SKU
+                    inv_by_id = {str(item_data.get('id', '')): item_data for item_data in inventory_data.values()}
+
                     # Check each required SKU against available inventory
                     for barcode_id, required_quantity in inventory_requirements.items():
-                        # Search through inventory items for matching barcode_id field
-                        found_item = None
-                        for item_id, item_data in inventory_data.items():
-                            if str(item_data.get('id', '')) == str(barcode_id):
-                                found_item = item_data
-                                break
-                        
+                        found_item = inv_by_id.get(str(barcode_id))
+
                         if found_item:
                             available_quantity = found_item.get('remaining_quantity', 0)
                             
@@ -2676,6 +2676,145 @@ def validate_trip_endpoint(trip_id):
         logger.error(f"Error in validate_trip_endpoint: {str(e)}")
         return jsonify({'error': f'Error validating trip: {str(e)}'}), 500
 
+# Manifest email settings
+# The Azure client secret is stored encrypted and is never returned to the browser -
+# the UI only learns whether one is set.
+AZURE_SECRET_KEY = 'azure_client_secret'
+
+MANIFEST_SETTING_KEYS = [
+    'manifest_origin_name', 'manifest_origin_address', 'manifest_origin_phone',
+    'manifest_origin_license', 'azure_tenant_id', 'azure_client_id',
+    'azure_sender_email', 'manifest_email_subject', 'manifest_email_body',
+]
+
+DEFAULT_EMAIL_SUBJECT = 'Manifest {manifest_id} - order {order_id}'
+DEFAULT_EMAIL_BODY = (
+    '<p>Hello,</p>'
+    '<p>Attached is the transportation manifest for order {order_id} '
+    'to {customer_name}, scheduled for {delivery_date}.</p>'
+    '<p>Manifest ID: {manifest_id}</p>'
+    '<p>Thank you,<br/>SoundView</p>'
+)
+
+
+def set_preference(key, value):
+    """Insert or update a single global preference."""
+    preference = GlobalPreference.query.filter_by(preference_key=key).first()
+    if preference:
+        preference.preference_value = value
+    else:
+        db.session.add(GlobalPreference(preference_key=key, preference_value=value))
+
+
+def get_preference(key, default=''):
+    """Read a global preference, falling back to the supplied default."""
+    preference = GlobalPreference.query.filter_by(preference_key=key).first()
+    return preference.preference_value if preference else default
+
+
+@app.route('/api/manifest-settings')
+@login_required
+def get_manifest_settings():
+    """Origin licensee, Azure mail credentials, and the message template."""
+    try:
+        settings = {key: get_preference(key) for key in MANIFEST_SETTING_KEYS}
+
+        if not settings['manifest_origin_license']:
+            settings['manifest_origin_license'] = os.getenv('BIOTRACK_DEFAULT_LOCATION', '')
+        if not settings['manifest_email_subject']:
+            settings['manifest_email_subject'] = DEFAULT_EMAIL_SUBJECT
+        if not settings['manifest_email_body']:
+            settings['manifest_email_body'] = DEFAULT_EMAIL_BODY
+
+        settings['azure_secret_configured'] = bool(get_preference(AZURE_SECRET_KEY))
+        return jsonify({'success': True, 'settings': settings})
+    except Exception as e:
+        logging.getLogger('app.get_manifest_settings').error(str(e), exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/manifest-settings', methods=['POST'])
+@login_required
+def save_manifest_settings():
+    """Save manifest settings. A blank client secret leaves the stored one untouched."""
+    logger = logging.getLogger('app.save_manifest_settings')
+    try:
+        data = request.get_json() or {}
+
+        for key in MANIFEST_SETTING_KEYS:
+            if key in data:
+                set_preference(key, data[key] or '')
+
+        secret = (data.get(AZURE_SECRET_KEY) or '').strip()
+        if secret:
+            from utils.crypto import encrypt
+            set_preference(AZURE_SECRET_KEY, encrypt(secret))
+            logger.info("Azure client secret updated")
+
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Settings saved'})
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Failed to save manifest settings: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/email-contacts')
+@login_required
+def get_email_contacts():
+    """List contacts. Without mapping_id, returns the internal staff CC list."""
+    try:
+        mapping_id = request.args.get('mapping_id', type=int)
+        contacts = EmailContact.query.filter_by(location_mapping_id=mapping_id).order_by(EmailContact.id).all()
+        return jsonify({'success': True, 'contacts': [
+            {'id': c.id, 'name': c.name, 'email': c.email, 'is_active': c.is_active}
+            for c in contacts
+        ]})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/email-contacts', methods=['POST'])
+@login_required
+def create_email_contact():
+    """Add a recipient. mapping_id omitted means an internal CC contact."""
+    logger = logging.getLogger('app.create_email_contact')
+    try:
+        data = request.get_json() or {}
+        email = (data.get('email') or '').strip()
+        if not email:
+            return jsonify({'error': 'Email is required'}), 400
+
+        contact = EmailContact(
+            location_mapping_id=data.get('mapping_id'),
+            name=(data.get('name') or '').strip(),
+            email=email
+        )
+        db.session.add(contact)
+        db.session.commit()
+        return jsonify({'success': True, 'contact': {
+            'id': contact.id, 'name': contact.name, 'email': contact.email, 'is_active': contact.is_active
+        }})
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Failed to create email contact: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/email-contacts/<int:contact_id>', methods=['DELETE'])
+@login_required
+def delete_email_contact(contact_id):
+    """Remove a recipient."""
+    try:
+        contact = EmailContact.query.get_or_404(contact_id)
+        db.session.delete(contact)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
 # Global Preferences API endpoints
 @app.route('/api/global-preferences')
 @login_required
@@ -2683,7 +2822,11 @@ def get_global_preferences():
     """Get all global preferences"""
     try:
         preferences = GlobalPreference.query.all()
-        preferences_dict = {pref.preference_key: pref.preference_value for pref in preferences}
+        # The Azure client secret is excluded - it is only ever read server-side
+        preferences_dict = {
+            pref.preference_key: pref.preference_value
+            for pref in preferences if pref.preference_key != AZURE_SECRET_KEY
+        }
         return jsonify({'success': True, 'preferences': preferences_dict})
     except Exception as e:
         return jsonify({'error': str(e)}), 500

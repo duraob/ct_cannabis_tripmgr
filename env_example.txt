@@ -24,3 +24,10 @@ LEAFTRADE_API_KEY=your-leaftrade-api-key
 BIOTRACK_API_URL=your-biotrack-api-url
 BIOTRACK_API_KEY=your-biotrack-api-key
 BIOTRACK_TRAINING_MODE=1  # Set to 1 for training, 0 for production
+
+# Encrypts credentials stored in the database (Azure client secret for manifest email).
+# Generate once with:
+#   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# Must be identical for the web app and the RQ worker. If it changes, saved credentials
+# must be re-entered on the config page.
+ENCRYPTION_KEY=your-fernet-key-here

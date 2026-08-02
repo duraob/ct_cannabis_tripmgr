@@ -25,19 +25,6 @@
                         </div>
                         
                         <div>
-                            <h4 class="text-sm font-medium text-gray-900 mb-2">🚚 How to Create a Trip</h4>
-                            <ol class="text-xs text-gray-600 space-y-2">
-                                <li><strong>Step 1:</strong> Click "Load Orders" to see available orders</li>
-                                <li><strong>Step 2:</strong> Check the boxes for orders you want to deliver</li>
-                                <li><strong>Step 3:</strong> Set the stop number for each order (1, 2, 3, etc.)</li>
-                                <li><strong>Step 4:</strong> Pick two different drivers from the dropdowns</li>
-                                <li><strong>Step 5:</strong> Pick a vehicle from the dropdown</li>
-                                <li><strong>Step 6:</strong> Review the trip summary at the bottom</li>
-                                <li><strong>Step 7:</strong> Click "Create Trip" when ready</li>
-                            </ol>
-                        </div>
-                        
-                        <div>
                             <h4 class="text-sm font-medium text-gray-900 mb-2">⚠️ Common Issues & Fixes</h4>
                             <div class="text-xs text-gray-600 space-y-2">
                                 <div>
@@ -97,10 +84,11 @@
                                         <input type="date" id="deliveryDateFilter" class="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" onchange="filterOrders()">
                                         <button type="button" onclick="clearDateFilter()" class="text-sm text-blue-600 hover:text-blue-800">Clear Filter</button>
                                     </div>
-                                    <div id="usableWeightTotals" class="hidden text-sm text-gray-700 mb-2">
-                                        <span>Total usable weight (all orders): <strong id="totalUsableWeightAll">0</strong> g</span>
-                                        <span class="ml-4">Total usable weight (selected): <strong id="totalUsableWeightSelected">0</strong> g</span>
-                                        <div id="weightLimitFlagAll" class="hidden mt-1 text-amber-700 text-sm font-medium">⚠ State limit (2 lbs) exceeded — 2 drivers required for this trip.</div>
+                                    <div id="usableWeightTotals" class="hidden text-sm mb-2">
+                                        <span class="text-gray-700">Usable weight selected: </span>
+                                        <strong id="totalUsableWeightSelected" class="text-gray-900">0</strong>
+                                        <span class="text-gray-700"> g of 907 g limit</span>
+                                        <div id="weightLimitFlagSelected" class="hidden mt-1 text-amber-700 text-sm font-medium">⚠ Selected orders exceed the 2 lb state limit — 2 drivers required for this trip.</div>
                                     </div>
                                     <div id="ordersWeightsLoading" class="hidden flex items-center gap-2 text-sm text-blue-600 mb-2">
                                         <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -385,25 +373,23 @@ function displayOrders(orders) {
 }
 
 function updateUsableWeightTotals() {
-    const allEl = document.getElementById('totalUsableWeightAll');
     const selectedEl = document.getElementById('totalUsableWeightSelected');
-    if (!allEl || !selectedEl) return;
+    if (!selectedEl) return;
     const getWeight = (o) => {
         const fromOrder = Number(o.total_usable_weight);
         if (!isNaN(fromOrder) && fromOrder > 0) return fromOrder;
         return Number(orderWeightsMap[String(o.id).trim()] ?? o.totalUsableWeight ?? 0) || 0;
     };
-    const allTotal = currentDisplayedOrders.reduce((s, o) => s + getWeight(o), 0);
     const selectedTotal = currentDisplayedOrders.filter(o => {
         const cb = document.getElementById('order_' + o.id);
         return cb && cb.checked;
     }).reduce((s, o) => s + getWeight(o), 0);
-    allEl.textContent = allTotal.toFixed(1);
+    const overLimit = selectedTotal > STATE_LIMIT_GRAMS;
     selectedEl.textContent = selectedTotal.toFixed(1);
-    const flagAll = document.getElementById('weightLimitFlagAll');
-    if (flagAll) {
-        if (allTotal > STATE_LIMIT_GRAMS) flagAll.classList.remove('hidden');
-        else flagAll.classList.add('hidden');
+    selectedEl.className = overLimit ? 'text-amber-700' : 'text-gray-900';
+    const flagSelected = document.getElementById('weightLimitFlagSelected');
+    if (flagSelected) {
+        flagSelected.classList.toggle('hidden', !overLimit);
     }
 }
 

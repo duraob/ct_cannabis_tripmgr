@@ -512,13 +512,22 @@ def get_order_details(order_id: str) -> Optional[Dict[str, Any]]:
                 else:
                     quantity = 0
                 
+                # LeafTrade returns prices as strings ("256.00"), so they are converted
+                # before use - multiplying the raw value by the quantity repeats the
+                # string instead of computing a total.
+                try:
+                    unit_price = float(item.get("unit_price_net") or 0)
+                except (ValueError, TypeError):
+                    logger.warning(f"Unparseable unit price on line item {item.get('id')}: {item.get('unit_price_net')!r}")
+                    unit_price = 0.0
+
                 line_item = {
                     "id": item.get("id"),
                     "product_name": product_name,
                     "product_sku": product_sku,
                     "quantity": quantity,
-                    "unit_price": item.get("unit_price_net", 0),
-                    "total_price": item.get("unit_price_net", 0) * quantity,
+                    "unit_price": unit_price,
+                    "total_price": round(unit_price * quantity, 2),
                     "pull_number": pull_number,
                     "barcode_id": barcode_id,
                     "inventory_id": item.get("stock_id"),

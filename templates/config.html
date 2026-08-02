@@ -280,6 +280,114 @@
             </div>
         </div>
 
+        <!-- Manifest Email -->
+        <div class="bg-white shadow rounded-lg mb-8">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h2 class="text-xl font-semibold text-gray-900">Manifest Email</h2>
+                <p class="text-sm text-gray-600 mt-1">Details printed on the manifest, mail credentials, and the message sent to dispensaries</p>
+            </div>
+
+            <div class="p-6 space-y-8">
+                <div>
+                    <h3 class="text-lg font-medium text-gray-900 mb-1">Licensee Details</h3>
+                    <p class="text-sm text-gray-600 mb-4">Printed in the top-left block of every manifest.</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Licensee's Name</label>
+                            <input type="text" id="manifest_origin_name" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Licensee's License #</label>
+                            <input type="text" id="manifest_origin_license" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Licensee's Address</label>
+                            <textarea id="manifest_origin_address" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500" placeholder="159 E Main Street&#10;Bristol, CT 06010"></textarea>
+                            <p class="text-xs text-gray-500 mt-1">Line breaks are kept on the manifest.</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Licensee's Phone</label>
+                            <input type="text" id="manifest_origin_phone" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="border-t border-gray-200 pt-6">
+                    <h3 class="text-lg font-medium text-gray-900 mb-1">Microsoft 365 Credentials</h3>
+                    <p class="text-sm text-gray-600 mb-4">
+                        The Azure app registration used to send mail. It needs the <span class="font-medium">Mail.Send</span>
+                        application permission with admin consent granted.
+                    </p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Tenant ID</label>
+                            <input type="text" id="azure_tenant_id" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Client ID</label>
+                            <input type="text" id="azure_client_id" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Sender Email</label>
+                            <input type="email" id="azure_sender_email" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Client Secret <span id="secret-status" class="text-xs font-normal text-gray-500"></span>
+                            </label>
+                            <input type="password" id="azure_client_secret" autocomplete="new-password" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500" placeholder="Leave blank to keep the saved secret">
+                            <p class="text-xs text-gray-500 mt-1">Stored encrypted. It is never shown again after saving.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="border-t border-gray-200 pt-6">
+                    <h3 class="text-lg font-medium text-gray-900 mb-1">Message Template</h3>
+                    <p class="text-sm text-gray-600 mb-4">
+                        Pre-filled into the send dialog, where it can still be edited before sending. Placeholders:
+                        <code class="text-xs bg-gray-100 px-1 rounded">{customer_name}</code>
+                        <code class="text-xs bg-gray-100 px-1 rounded">{order_id}</code>
+                        <code class="text-xs bg-gray-100 px-1 rounded">{manifest_id}</code>
+                        <code class="text-xs bg-gray-100 px-1 rounded">{delivery_date}</code>
+                        <code class="text-xs bg-gray-100 px-1 rounded">{stop_number}</code>
+                    </p>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+                        <input type="text" id="manifest_email_subject" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Body</label>
+                    <div class="border border-gray-300 rounded-md overflow-hidden">
+                        <div class="flex flex-wrap gap-1 bg-gray-50 border-b border-gray-300 p-2" id="editor-toolbar">
+                            <button type="button" data-cmd="bold" class="px-3 py-1 text-sm font-bold bg-white border border-gray-300 rounded hover:bg-gray-100" title="Bold">B</button>
+                            <button type="button" data-cmd="italic" class="px-3 py-1 text-sm italic bg-white border border-gray-300 rounded hover:bg-gray-100" title="Italic">I</button>
+                            <button type="button" data-cmd="underline" class="px-3 py-1 text-sm underline bg-white border border-gray-300 rounded hover:bg-gray-100" title="Underline">U</button>
+                            <button type="button" data-cmd="insertUnorderedList" class="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100" title="Bulleted list">&bull; List</button>
+                            <button type="button" data-cmd="createLink" class="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100" title="Insert link">Link</button>
+                            <button type="button" data-cmd="unlink" class="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100" title="Remove link">Unlink</button>
+                        </div>
+                        <div id="manifest_email_body" contenteditable="true" class="px-3 py-2 min-h-[10rem] focus:outline-none prose-sm"></div>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">Sent as HTML, so formatting and links are preserved.</p>
+                </div>
+
+                <div class="border-t border-gray-200 pt-6">
+                    <h3 class="text-lg font-medium text-gray-900 mb-1">Internal CC</h3>
+                    <p class="text-sm text-gray-600 mb-4">Staff copied on every manifest sent. Dispensary recipients are managed per store on the <a href="/mapping" class="text-blue-600 hover:underline">Mapping</a> page.</p>
+                    <div class="flex flex-col sm:flex-row gap-2 mb-4">
+                        <input type="text" id="cc-name" placeholder="Name (optional)" class="sm:w-56 px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                        <input type="email" id="cc-email" placeholder="email@company.com" class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                        <button type="button" onclick="addInternalContact()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Add</button>
+                    </div>
+                    <div id="cc-list" class="space-y-2"></div>
+                </div>
+
+                <div class="border-t border-gray-200 pt-6 flex items-center gap-3">
+                    <button type="button" onclick="saveManifestSettings()" id="save-manifest-settings" class="px-5 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Save Settings</button>
+                    <span id="manifest-settings-status" class="text-sm"></span>
+                </div>
+            </div>
+        </div>
+
         <!-- Training Mode Status -->
         <div class="bg-white shadow rounded-lg mb-8">
             <div class="px-6 py-4 border-b border-gray-200">
@@ -307,28 +415,6 @@
                         </p>
                     </div>
                 </div>
-            </div>
-        </div>
-
-        <!-- BioTrack Data Refresh -->
-        <div class="bg-white shadow rounded-lg mb-8">
-            <div class="px-6 py-4 border-b border-gray-200">
-                <h2 class="text-xl font-semibold text-gray-900">BioTrack Data Management</h2>
-                <p class="text-sm text-gray-600 mt-1">Manage BioTrack data with current training mode</p>
-            </div>
-            
-            <div class="p-6">
-                <p class="text-sm text-gray-600 mb-4">
-                    Current training mode: <span class="font-medium {% if is_training_mode %}text-yellow-600{% else %}text-red-600{% endif %}">
-                        {% if is_training_mode %}Training{% else %}Production{% endif %}
-                    </span>
-                </p>
-                <button onclick="refreshBiotrackData()" class="bg-blue-500 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium">
-                    Refresh BioTrack Data
-                </button>
-                <p class="text-xs text-gray-500 mt-2">
-                    This will clear existing data and refresh from BioTrack using the current training mode.
-                </p>
             </div>
         </div>
 
@@ -407,52 +493,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Load simplified report status on page load
     checkSimpleReportStatus();
 });
-
-function refreshBiotrackData() {
-    const button = event.target;
-    const originalText = button.textContent;
-    
-    // Disable button and show loading
-    button.disabled = true;
-    button.textContent = 'Refreshing...';
-    button.className = 'bg-gray-400 text-white px-4 py-2 rounded text-sm font-medium cursor-not-allowed';
-    
-    // Show confirmation dialog
-    if (!confirm('This will clear all existing BioTrack data and refresh from the current training mode environment. Continue?')) {
-        // Re-enable button if cancelled
-        button.disabled = false;
-        button.textContent = originalText;
-        button.className = 'bg-blue-500 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium';
-        return;
-    }
-    
-    // Make API call to refresh all BioTrack data
-    fetch('/api/biotrack/refresh', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert('BioTrack data refreshed successfully!');
-            // Reload status
-            loadStatus();
-        } else {
-            alert('Error refreshing BioTrack data: ' + (data.error || 'Unknown error'));
-        }
-    })
-    .catch(error => {
-        alert('Network error occurred while refreshing BioTrack data');
-    })
-    .finally(() => {
-        // Re-enable button
-        button.disabled = false;
-        button.textContent = originalText;
-        button.className = 'bg-blue-500 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium';
-    });
-}
 
 function loadStatus() {
     // Load drivers status
@@ -990,10 +1030,167 @@ function showToast(message, type) {
     toast.className = `fixed top-4 right-4 px-6 py-3 rounded-md text-white z-50 ${type === 'success' ? 'bg-green-500' : 'bg-red-500'}`;
     toast.textContent = message;
     document.body.appendChild(toast);
-    
+
     setTimeout(() => {
         document.body.removeChild(toast);
     }, 3000);
+}
+
+// ---- Manifest email settings ----
+
+const MANIFEST_TEXT_FIELDS = [
+    'manifest_origin_name', 'manifest_origin_address', 'manifest_origin_phone',
+    'manifest_origin_license', 'azure_tenant_id', 'azure_client_id',
+    'azure_sender_email', 'manifest_email_subject'
+];
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadManifestSettings();
+    loadInternalContacts();
+
+    document.getElementById('editor-toolbar').addEventListener('click', function(event) {
+        const button = event.target.closest('button[data-cmd]');
+        if (!button) return;
+
+        const command = button.dataset.cmd;
+        if (command === 'createLink') {
+            const url = prompt('Link URL:', 'https://');
+            if (url) document.execCommand('createLink', false, url);
+        } else {
+            document.execCommand(command, false, null);
+        }
+        document.getElementById('manifest_email_body').focus();
+    });
+});
+
+async function loadManifestSettings() {
+    try {
+        const response = await fetch('/api/manifest-settings');
+        const data = await response.json();
+        if (!data.success) return;
+
+        MANIFEST_TEXT_FIELDS.forEach(field => {
+            document.getElementById(field).value = data.settings[field] || '';
+        });
+        document.getElementById('manifest_email_body').innerHTML = data.settings.manifest_email_body || '';
+        document.getElementById('secret-status').textContent =
+            data.settings.azure_secret_configured ? '— saved' : '— not set';
+    } catch (error) {
+        showToast('Could not load manifest settings', 'error');
+    }
+}
+
+async function saveManifestSettings() {
+    const button = document.getElementById('save-manifest-settings');
+    const status = document.getElementById('manifest-settings-status');
+    button.disabled = true;
+    status.textContent = 'Saving...';
+    status.className = 'text-sm text-gray-500';
+
+    const payload = {
+        manifest_email_body: document.getElementById('manifest_email_body').innerHTML,
+        azure_client_secret: document.getElementById('azure_client_secret').value
+    };
+    MANIFEST_TEXT_FIELDS.forEach(field => {
+        payload[field] = document.getElementById(field).value;
+    });
+
+    try {
+        const response = await fetch('/api/manifest-settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('azure_client_secret').value = '';
+            status.textContent = 'Saved';
+            status.className = 'text-sm text-green-600';
+            loadManifestSettings();
+        } else {
+            status.textContent = data.error || 'Save failed';
+            status.className = 'text-sm text-red-600';
+        }
+    } catch (error) {
+        status.textContent = 'Save failed';
+        status.className = 'text-sm text-red-600';
+    } finally {
+        button.disabled = false;
+    }
+}
+
+async function loadInternalContacts() {
+    const list = document.getElementById('cc-list');
+    try {
+        const response = await fetch('/api/email-contacts');
+        const data = await response.json();
+
+        if (!data.contacts || data.contacts.length === 0) {
+            list.innerHTML = '<p class="text-sm text-gray-500">No internal recipients yet.</p>';
+            return;
+        }
+
+        list.innerHTML = data.contacts.map(contact => `
+            <div class="flex items-center justify-between bg-gray-50 px-3 py-2 rounded-md">
+                <span class="text-sm text-gray-800">
+                    ${contact.name ? escapeHtml(contact.name) + ' &lt;' + escapeHtml(contact.email) + '&gt;' : escapeHtml(contact.email)}
+                </span>
+                <button onclick="removeInternalContact(${contact.id})" class="text-sm text-red-600 hover:text-red-800">Remove</button>
+            </div>
+        `).join('');
+    } catch (error) {
+        list.innerHTML = '<p class="text-sm text-red-600">Could not load contacts.</p>';
+    }
+}
+
+async function addInternalContact() {
+    const nameInput = document.getElementById('cc-name');
+    const emailInput = document.getElementById('cc-email');
+    const email = emailInput.value.trim();
+    if (!email) {
+        showToast('Enter an email address', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/email-contacts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: nameInput.value.trim(), email: email })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            nameInput.value = '';
+            emailInput.value = '';
+            loadInternalContacts();
+        } else {
+            showToast(data.error || 'Could not add contact', 'error');
+        }
+    } catch (error) {
+        showToast('Could not add contact', 'error');
+    }
+}
+
+async function removeInternalContact(contactId) {
+    try {
+        const response = await fetch(`/api/email-contacts/${contactId}`, { method: 'DELETE' });
+        const data = await response.json();
+        if (data.success) {
+            loadInternalContacts();
+        } else {
+            showToast(data.error || 'Could not remove contact', 'error');
+        }
+    } catch (error) {
+        showToast('Could not remove contact', 'error');
+    }
+}
+
+function escapeHtml(value) {
+    const div = document.createElement('div');
+    div.textContent = value || '';
+    return div.innerHTML;
 }
 </script>
 {% endblock %} 

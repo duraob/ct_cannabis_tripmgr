@@ -195,6 +195,11 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Sample/exported manifests. Real manifests carry transporter names and dates of
+# birth, licence numbers, vehicle VINs and customer addresses - keep them out of git.
+print.pdf
+manifest_*.pdf
 *.swp
 *.swo
 *~

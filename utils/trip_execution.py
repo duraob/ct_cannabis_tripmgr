@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 
 from sqlalchemy.exc import IntegrityError
-from models import db, Trip, TripOrder, Driver, Vehicle, TripExecution
+from models import db, Trip, TripOrder, TripOrderItem, Driver, Vehicle, TripExecution
 from utils.timezone import get_est_now, get_est_now_naive
 import re
 
@@ -130,7 +130,7 @@ def execute_trip_background_job(trip_id):
                         continue
                     
                     # Process sublot and manifest creation
-                    result = _process_order_manifest(trip_order, order_details, token, route_segments)
+                    result = _process_order_manifest(trip_order, order_details, token, driver1, driver2, vehicle, route_segments)
                     manifest_results.append(result)
                     
                     if result['status'] == 'success':
@@ -244,7 +244,38 @@ def _update_trip_execution_status(trip_id, status, progress_message=None):
         
         db.session.commit()
 
-def _process_order_manifest(trip_order, order_details, token, route_segments=None):
+def _record_order_items(trip_order, sublot_items, new_barcode_ids):
+    """Persist each line item alongside the BioTrack sublot UID created for it.
+
+    Pairing is positional: BioTrack's inventory_split returns barcode IDs in the same
+    order as the request. A count mismatch means that pairing cannot be trusted, so it
+    fails the order rather than writing a manifest with the wrong batch/lot IDs.
+    """
+    if len(new_barcode_ids) != len(sublot_items):
+        raise Exception(
+            f"Sublot count mismatch for order {trip_order.order_id}: requested "
+            f"{len(sublot_items)} splits but BioTrack returned {len(new_barcode_ids)} "
+            f"barcode IDs - cannot map sublots to line items"
+        )
+
+    # Rebuild from scratch so re-running a trip does not accumulate duplicates
+    db.session.query(TripOrderItem).filter_by(trip_order_id=trip_order.id).delete()
+
+    for item, sublot_barcode_id in zip(sublot_items, new_barcode_ids):
+        db.session.add(TripOrderItem(
+            trip_order_id=trip_order.id,
+            product_name=item['product_name'],
+            quantity=item['quantity'],
+            line_total=item['line_total'],
+            parent_barcode_id=item['parent_barcode_id'],
+            sublot_barcode_id=str(sublot_barcode_id)
+        ))
+
+    db.session.commit()
+    logger.info(f"Recorded {len(sublot_items)} order items for order {trip_order.order_id}")
+
+
+def _process_order_manifest(trip_order, order_details, token, driver1, driver2, vehicle, route_segments=None):
     """Process individual order manifest creation using original working pattern"""
     try:
         logger.info(f"Processing manifest for order {trip_order.order_id}")
@@ -259,17 +290,26 @@ def _process_order_manifest(trip_order, order_details, token, route_segments=Non
         # Get line items for sublot creation (original working pattern)
         line_items = order_details.get('line_items', [])
         sublot_data = []
+        # Parallel to sublot_data - retains the product/quantity for each request position
+        # so the returned sublot UIDs can be paired back to their line item.
+        sublot_items = []
         invalid_uid_count = 0
-        
+
         for line_item in line_items:
             barcode_id = line_item.get('barcode_id')  # batch_ref from LeafTrade
             quantity = line_item.get('quantity', 1)
-            
+
             # Only process line items with valid BioTrack UIDs (16-digit numbers)
             if barcode_id and _is_valid_biotrack_uid(barcode_id):
                 sublot_data.append({
                     'barcodeid': barcode_id,
                     'remove_quantity': str(quantity)
+                })
+                sublot_items.append({
+                    'product_name': line_item.get('product_name'),
+                    'quantity': quantity,
+                    'line_total': line_item.get('total_price'),
+                    'parent_barcode_id': barcode_id
                 })
             elif barcode_id:
                 invalid_uid_count += 1
@@ -316,16 +356,22 @@ def _process_order_manifest(trip_order, order_details, token, route_segments=Non
                 'error': 'No barcode IDs returned from sublot creation'
             }
         
+        # Record which sublot UID came from which line item. BioTrack returns the new
+        # barcode IDs in the same order they were requested (verified against training),
+        # so position is what pairs a sublot back to its product and quantity.
+        _record_order_items(trip_order, sublot_items, new_barcode_ids)
+
         # Update status to sublotted after successful sublot creation
         trip_order.status = 'sublotted'
         trip_order.error_message = None
         db.session.commit()
         
-        # Get room ID from location mapping
+        # Get room and vendor from location mapping (one lookup, used for both)
         from models import LocationMapping
         dispensary_location_id = order_data.get('dispensary_location', {}).get('id')
         room_id = 'default_room'  # Default fallback
-        
+        vendor_license = 'default_license'  # Default fallback
+
         if dispensary_location_id:
             location_mapping = db.session.query(LocationMapping).filter_by(
                 leaftrade_dispensary_location_id=dispensary_location_id
@@ -334,6 +380,8 @@ def _process_order_manifest(trip_order, order_details, token, route_segments=Non
                 room_id = location_mapping.default_biotrack_room_id
             elif trip_order.room_override:
                 room_id = trip_order.room_override
+            if location_mapping and location_mapping.biotrack_vendor_id:
+                vendor_license = location_mapping.biotrack_vendor_id
         
         # Move sublots to room (original working pattern)
         logger.info(f"Moving sublots to room for order {trip_order.order_id}")
@@ -362,16 +410,6 @@ def _process_order_manifest(trip_order, order_details, token, route_segments=Non
         trip_order.error_message = None
         db.session.commit()
         
-        # Get vendor ID from location mapping
-        vendor_license = 'default_license'  # Default fallback
-        
-        if dispensary_location_id:
-            location_mapping = db.session.query(LocationMapping).filter_by(
-                leaftrade_dispensary_location_id=dispensary_location_id
-            ).first()
-            if location_mapping and location_mapping.biotrack_vendor_id:
-                vendor_license = location_mapping.biotrack_vendor_id
-        
         # Create manifest with route data (original working pattern)
         logger.info(f"Creating manifest for order {trip_order.order_id}")
         
@@ -390,10 +428,10 @@ def _process_order_manifest(trip_order, order_details, token, route_segments=Non
         
         from api.biotrack import post_manifest
         manifest_result = post_manifest(
-            token, 
-            manifest_data, 
-            [trip_order.trip.driver1.biotrack_id, trip_order.trip.driver2.biotrack_id],
-            trip_order.trip.vehicle.biotrack_id
+            token,
+            manifest_data,
+            [driver1.biotrack_id, driver2.biotrack_id],
+            vehicle.biotrack_id
         )
         
         if not manifest_result:

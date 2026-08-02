@@ -12,3 +12,6 @@ gunicorn==21.2.0
 tzdata
 redis==5.0.1
 rq==1.15.1
+reportlab==5.0.0
+msal==1.37.0
+cryptography==50.0.0

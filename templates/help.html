@@ -229,17 +229,26 @@
                 </div>
                 <h2 class="text-xl font-semibold text-gray-900">Trip Status Management</h2>
             </div>
-            <p class="text-gray-700 mb-4">Manage trip statuses using the dropdown menu on the trips dashboard or trip detail page.</p>
-            
+            <p class="text-gray-700 mb-4">Trip status normally updates on its own as a trip is validated and executed. You can also set it manually from the trip detail page.</p>
+
             <div class="bg-blue-50 rounded-lg p-4 mb-4">
                 <h3 class="font-medium text-blue-900 mb-2">How to Change Status:</h3>
                 <ul class="text-blue-800 space-y-1 text-sm">
-                    <li>• On the <strong>Trips Dashboard:</strong> Use the dropdown menu next to the status badge in the table</li>
-                    <li>• On the <strong>Trip Detail Page:</strong> Use the dropdown menu next to the status badge in the status section</li>
-                    <li>• Select the desired status from the dropdown</li>
+                    <li>• Open the trip from the Trips dashboard ("View Details")</li>
+                    <li>• Use the <strong>Override status</strong> dropdown in the Status card</li>
                     <li>• Confirm the change when prompted</li>
                     <li>• The page will refresh to show the updated status</li>
                 </ul>
+            </div>
+
+            <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+                <h3 class="font-medium text-amber-900 mb-2">⚠ Overriding status does not touch BioTrack</h3>
+                <p class="text-amber-800 text-sm">
+                    Changing the status only changes the label in this app — it never creates or reverses anything in BioTrack.
+                    If a trip shows the <strong>Inventory moved</strong> badge, it has already written sublots or manifests to BioTrack.
+                    Setting such a trip back to Pending or Validated re-enables the Execute button, and executing it again creates a
+                    <strong>second</strong> set of sublots and manifests. Check BioTrack before re-running a trip.
+                </p>
             </div>
             
             <div class="bg-green-50 rounded-lg p-4 mb-4">

@@ -41,8 +41,8 @@
             <div class="bg-white overflow-hidden shadow rounded-lg">
                 <div class="px-4 py-5 sm:p-6">
                     <dt class="text-sm font-medium text-gray-500 truncate">Status</dt>
-                    <dd class="mt-1 text-3xl font-semibold text-gray-900">
-                        <div class="flex items-center space-x-3">
+                    <dd class="mt-1">
+                        <div class="flex items-center flex-wrap gap-2">
                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
                                 {% if trip.status == 'pending' %}bg-yellow-100 text-yellow-800
                                 {% elif trip.status == 'validated' %}bg-orange-100 text-orange-800
@@ -50,16 +50,26 @@
                                 {% elif trip.status == 'closed' %}bg-gray-100 text-gray-800
                                 {% elif trip.status == 'partially_completed' %}bg-orange-100 text-orange-800
                                 {% else %}bg-gray-100 text-gray-800{% endif %}">
-                                {{ trip.status.title() }}
+                                {{ trip.status.replace('_', ' ').title() }}
                             </span>
-                            <select onchange="changeTripStatus({{ trip.id }}, this.value, '{{ trip.status }}', this)" 
-                                    class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                            {% if trip.trip_orders | selectattr('status', 'in', ['sublotted', 'inventory_moved', 'manifested']) | list and trip.status != 'completed' %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                                  title="This trip already sublotted or moved inventory in BioTrack. Re-executing would duplicate it.">
+                                Inventory moved
+                            </span>
+                            {% endif %}
+                        </div>
+                        <div class="mt-3">
+                            <label for="status-override" class="block text-xs font-medium text-gray-500 mb-1">Override status</label>
+                            <select id="status-override" onchange="changeTripStatus({{ trip.id }}, this.value, '{{ trip.status }}', this)"
+                                    class="block w-full rounded-md border-gray-300 shadow-sm text-sm focus:border-blue-500 focus:ring-blue-500">
                                 <option value="pending" {% if trip.status == 'pending' %}selected{% endif %}>Pending</option>
                                 <option value="validated" {% if trip.status == 'validated' %}selected{% endif %}>Validated</option>
                                 <option value="completed" {% if trip.status == 'completed' %}selected{% endif %}>Completed</option>
                                 <option value="partially_completed" {% if trip.status == 'partially_completed' %}selected{% endif %}>Partially Completed</option>
                                 <option value="closed" {% if trip.status == 'closed' %}selected{% endif %}>Closed</option>
                             </select>
+                            <p class="mt-1 text-xs text-gray-500">Sets the status manually. Does not run or undo any BioTrack work.</p>
                         </div>
                     </dd>
                 </div>
@@ -227,6 +237,25 @@
                                 </span>
                                 {% endif %}
                             </div>
+                            {% if trip_order.manifest_id %}
+                            <div class="flex items-center space-x-2">
+                                <a href="{{ url_for('trip_stop_manifest_pdf', trip_id=trip.id, trip_order_id=trip_order.id) }}"
+                                   target="_blank"
+                                   class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                                    View Manifest
+                                </a>
+                                {% if trip_order.manifest_sent_at %}
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
+                                      title="{{ trip_order.manifest_sent_to }}">
+                                    Emailed {{ trip_order.manifest_sent_at.strftime('%b %d, %I:%M %p') }}{% if trip_order.manifest_send_count > 1 %} ({{ trip_order.manifest_send_count }}&times;){% endif %}
+                                </span>
+                                {% endif %}
+                                <button onclick="openSendManifest({{ trip_order.id }}, '{{ trip_order.order_id }}')"
+                                        class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+                                    {{ 'Resend Manifest' if trip_order.manifest_sent_at else 'Email Manifest' }}
+                                </button>
+                            </div>
+                            {% endif %}
                         </div>
                         <!-- Error Message Display -->
                         {% if trip_order.error_message %}
@@ -334,7 +363,73 @@
     </div>
 </div>
 
+<!-- Send Manifest Modal -->
+<div id="sendManifestModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50">
+    <div class="relative top-10 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white mb-10">
+        <div class="flex items-center justify-between mb-1">
+            <h3 class="text-lg font-semibold text-gray-900">Email Manifest</h3>
+            <button onclick="closeSendManifest()" class="text-gray-400 hover:text-gray-600">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+        <p class="text-sm text-gray-600 mb-4" id="send-manifest-subtitle"></p>
+
+        <div id="send-manifest-loading" class="py-8 text-center text-gray-500">Loading recipients...</div>
+
+        <div id="send-manifest-form" class="hidden space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">To</label>
+                <input type="text" id="send-to"
+                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                <p class="text-xs text-gray-500 mt-1">Comma separated. Pre-filled from this dispensary's contacts on the Mapping page.</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">CC</label>
+                <input type="text" id="send-cc"
+                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+                <input type="text" id="send-subject"
+                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Message</label>
+                <div class="border border-gray-300 rounded-md overflow-hidden">
+                    <div class="flex flex-wrap gap-1 bg-gray-50 border-b border-gray-300 p-2" id="send-editor-toolbar">
+                        <button type="button" data-cmd="bold" class="px-3 py-1 text-sm font-bold bg-white border border-gray-300 rounded hover:bg-gray-100">B</button>
+                        <button type="button" data-cmd="italic" class="px-3 py-1 text-sm italic bg-white border border-gray-300 rounded hover:bg-gray-100">I</button>
+                        <button type="button" data-cmd="underline" class="px-3 py-1 text-sm underline bg-white border border-gray-300 rounded hover:bg-gray-100">U</button>
+                        <button type="button" data-cmd="insertUnorderedList" class="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100">&bull; List</button>
+                        <button type="button" data-cmd="createLink" class="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100">Link</button>
+                        <button type="button" data-cmd="unlink" class="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100">Unlink</button>
+                    </div>
+                    <div id="send-body" contenteditable="true" class="px-3 py-2 min-h-[9rem] focus:outline-none"></div>
+                </div>
+            </div>
+            <div class="bg-gray-50 border border-gray-200 rounded-md px-3 py-2 text-sm text-gray-700" id="send-attachment-note"></div>
+            <div id="send-manifest-warning" class="hidden p-3 bg-yellow-50 border border-yellow-200 rounded-md text-sm text-yellow-800"></div>
+            <div id="send-manifest-error" class="hidden p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700"></div>
+            <div class="flex space-x-3 pt-2">
+                <button type="button" onclick="closeSendManifest()"
+                        class="flex-1 px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-700 font-medium rounded-md">
+                    Cancel
+                </button>
+                <button type="button" onclick="submitSendManifest()" id="send-manifest-btn"
+                        class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md">
+                    Send
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
+// True when any order on this trip has already been sublotted or moved in BioTrack.
+const INVENTORY_PROCESSED_IN_BIOTRACK = {{ 'true' if trip.trip_orders | selectattr('status', 'in', ['sublotted', 'inventory_moved', 'manifested']) | list else 'false' }};
+
 async function executeTrip(tripId) {
     if (!confirm('Are you sure you want to execute this trip? This will create manifests and send notifications.')) {
         return;
@@ -671,13 +766,24 @@ async function changeTripStatus(tripId, newStatus, currentStatus, selectElement)
     if (newStatus === currentStatus) {
         return;
     }
-    
-    if (!confirm(`Are you sure you want to change the trip status from ${currentStatus} to ${newStatus}?`)) {
+
+    // Moving back to an executable status re-enables Execute. If this trip already
+    // wrote to BioTrack, running it again creates duplicate sublots and manifests.
+    const reopens = (newStatus === 'pending' || newStatus === 'validated');
+    let message = `Change trip status from ${currentStatus} to ${newStatus}?`;
+    if (reopens && INVENTORY_PROCESSED_IN_BIOTRACK) {
+        message = `Trip ${tripId} has already sublotted or moved inventory in BioTrack.\n\n`
+                + `Setting it back to "${newStatus}" re-enables the Execute button. Executing it again `
+                + `will create a SECOND set of sublots and manifests in BioTrack — this cannot be undone from here.\n\n`
+                + `Continue?`;
+    }
+
+    if (!confirm(message)) {
         // Reset dropdown to current status
         selectElement.value = currentStatus;
         return;
     }
-    
+
     showLoading('Updating Trip Status...');
     
     try {
@@ -787,5 +893,131 @@ async function changeTripStatus(tripId, newStatus, currentStatus, selectElement)
 
     init();
 })();
+
+// ---- Email manifest ----
+
+const SEND_TRIP_ID = {{ trip.id }};
+let sendTripOrderId = null;
+
+document.getElementById('send-editor-toolbar').addEventListener('click', function(event) {
+    const button = event.target.closest('button[data-cmd]');
+    if (!button) return;
+
+    const command = button.dataset.cmd;
+    if (command === 'createLink') {
+        const url = prompt('Link URL:', 'https://');
+        if (url) document.execCommand('createLink', false, url);
+    } else {
+        document.execCommand(command, false, null);
+    }
+    document.getElementById('send-body').focus();
+});
+
+async function openSendManifest(tripOrderId, orderId) {
+    sendTripOrderId = tripOrderId;
+
+    document.getElementById('send-manifest-subtitle').textContent = `Order #${orderId}`;
+    document.getElementById('send-manifest-loading').classList.remove('hidden');
+    document.getElementById('send-manifest-form').classList.add('hidden');
+    document.getElementById('send-manifest-error').classList.add('hidden');
+    document.getElementById('send-manifest-warning').classList.add('hidden');
+    document.getElementById('sendManifestModal').classList.remove('hidden');
+
+    try {
+        const response = await fetch(`/api/trips/${SEND_TRIP_ID}/stops/${tripOrderId}/email-preview`);
+        const data = await response.json();
+
+        if (!data.success) {
+            showSendError(data.error || 'Could not load recipients');
+            document.getElementById('send-manifest-loading').classList.add('hidden');
+            document.getElementById('send-manifest-form').classList.remove('hidden');
+            return;
+        }
+
+        document.getElementById('send-to').value = data.to.join(', ');
+        document.getElementById('send-cc').value = data.cc.join(', ');
+        document.getElementById('send-subject').value = data.subject;
+        document.getElementById('send-body').innerHTML = data.body;
+        document.getElementById('send-attachment-note').textContent =
+            `Attachment: manifest_${data.manifest_id}.pdf`;
+
+        if (data.sent_at) {
+            showSendWarning(`Already sent ${data.send_count > 1 ? data.send_count + ' times, last ' : ''}on ${data.sent_at} to ${data.sent_to}. Sending again will deliver a second copy.`);
+        }
+
+        if (data.to.length === 0) {
+            showSendError('This dispensary has no contacts yet. Add them on the Mapping page, or type recipients above.');
+        }
+
+        document.getElementById('send-manifest-loading').classList.add('hidden');
+        document.getElementById('send-manifest-form').classList.remove('hidden');
+    } catch (error) {
+        showSendError('Could not load recipients');
+        document.getElementById('send-manifest-loading').classList.add('hidden');
+        document.getElementById('send-manifest-form').classList.remove('hidden');
+    }
+}
+
+function closeSendManifest() {
+    document.getElementById('sendManifestModal').classList.add('hidden');
+    sendTripOrderId = null;
+}
+
+function showSendError(message) {
+    const box = document.getElementById('send-manifest-error');
+    box.textContent = message;
+    box.classList.remove('hidden');
+}
+
+function showSendWarning(message) {
+    const box = document.getElementById('send-manifest-warning');
+    box.textContent = message;
+    box.classList.remove('hidden');
+}
+
+function splitAddresses(value) {
+    return value.split(',').map(a => a.trim()).filter(a => a.length > 0);
+}
+
+async function submitSendManifest() {
+    const button = document.getElementById('send-manifest-btn');
+    const to = splitAddresses(document.getElementById('send-to').value);
+
+    if (to.length === 0) {
+        showSendError('Add at least one recipient');
+        return;
+    }
+
+    document.getElementById('send-manifest-error').classList.add('hidden');
+    button.disabled = true;
+    button.textContent = 'Sending...';
+
+    try {
+        const response = await fetch(`/api/trips/${SEND_TRIP_ID}/stops/${sendTripOrderId}/send-manifest`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                to: to,
+                cc: splitAddresses(document.getElementById('send-cc').value),
+                subject: document.getElementById('send-subject').value,
+                body: document.getElementById('send-body').innerHTML
+            })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            closeSendManifest();
+            alert(data.message);
+            location.reload();  // surface the new "Emailed ..." badge
+        } else {
+            showSendError(data.error || 'Send failed');
+        }
+    } catch (error) {
+        showSendError('Send failed');
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Send';
+    }
+}
 </script>
 {% endblock %} 
