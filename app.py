@@ -2759,6 +2759,23 @@ def save_manifest_settings():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/manifest-settings/test-email', methods=['POST'])
+@login_required
+def test_email_settings():
+    """Verify the Azure setup without sending a message."""
+    logger = logging.getLogger('app.test_email_settings')
+    try:
+        from api.email_service import test_connection
+        result = test_connection()
+        logger.info(f"Email connection test: {'passed' if result['success'] else 'failed'}")
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Email connection test errored: {str(e)}", exc_info=True)
+        return jsonify({'success': False, 'checks': [
+            {'name': 'Configuration', 'ok': False, 'detail': str(e)}
+        ]})
+
+
 @app.route('/api/email-contacts')
 @login_required
 def get_email_contacts():

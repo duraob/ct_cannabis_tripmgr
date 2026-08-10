@@ -18,6 +18,7 @@ logger = logging.getLogger('api.email_service')
 
 GRAPH_SCOPE = ["https://graph.microsoft.com/.default"]
 GRAPH_SEND_URL = "https://graph.microsoft.com/v1.0/users/{sender}/sendMail"
+GRAPH_USER_URL = "https://graph.microsoft.com/v1.0/users/{sender}"
 REQUEST_TIMEOUT = 30
 
 
@@ -61,6 +62,88 @@ def get_access_token():
             f"Azure token request failed: {result.get('error_description', result.get('error', 'unknown error'))}"
         )
     return result["access_token"]
+
+
+def test_connection():
+    """Check the Azure setup without sending anything.
+
+    The three ways this breaks fail at different points and look nothing alike, so
+    each is checked separately: a bad secret fails at login, a missing Mail.Send
+    grant only shows up as a 403 at send time, and an unreachable sender mailbox
+    fails even when both of those are correct.
+    """
+    import base64 as _b64
+    import json as _json
+
+    checks = []
+
+    tenant_id, client_id, sender, secret = _credentials()
+    checks.append({'name': 'Credentials present', 'ok': True,
+                   'detail': f"tenant {tenant_id[:8]}..., client {client_id[:8]}..., sender {sender}"})
+
+    # 1. Does the secret authenticate?
+    client = msal.ConfidentialClientApplication(
+        client_id,
+        authority=f"https://login.microsoftonline.com/{tenant_id}",
+        client_credential=secret,
+    )
+    result = client.acquire_token_for_client(scopes=GRAPH_SCOPE)
+    if "access_token" not in result:
+        detail = str(result.get('error_description') or result.get('error') or 'unknown error').split('\r')[0]
+        if 'AADSTS7000215' in detail:
+            detail = ("Invalid client secret. Azure truncates the Value column on screen - use the "
+                      "copy button when creating the secret, and check it is 40 characters. "
+                      "Do not use the Secret ID.")
+        elif 'AADSTS700016' in detail:
+            detail = "Application not found in this tenant - check the Client ID and Tenant ID match the same app."
+        checks.append({'name': 'Azure sign-in', 'ok': False, 'detail': detail})
+        return {'success': False, 'checks': checks}
+
+    token = result['access_token']
+
+    # 2. Was Mail.Send actually granted? Read it off the token's roles claim.
+    payload = token.split('.')[1]
+    payload += '=' * (-len(payload) % 4)
+    claims = _json.loads(_b64.urlsafe_b64decode(payload))
+    roles = claims.get('roles', [])
+    app_name = claims.get('app_displayname', client_id)
+    checks.append({'name': 'Azure sign-in', 'ok': True, 'detail': f"authenticated as app '{app_name}'"})
+
+    has_mail_send = 'Mail.Send' in roles
+    checks.append({
+        'name': 'Mail.Send permission',
+        'ok': has_mail_send,
+        'detail': (f"granted (roles: {', '.join(roles)})" if has_mail_send else
+                   "NOT granted. Add Microsoft Graph > Application permissions > Mail.Send to this app "
+                   "and click 'Grant admin consent'. "
+                   + (f"Current roles: {', '.join(roles)}" if roles else "This app has no application permissions.")),
+    })
+
+    # 3. Can Graph actually see the sender mailbox?
+    response = requests.get(
+        GRAPH_USER_URL.format(sender=sender),
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=REQUEST_TIMEOUT,
+    )
+    # Reading a user requires User.Read.All, which sending does not. An app with only
+    # Mail.Send gets a 403 here and still sends perfectly well, so that case is reported
+    # as unverified rather than failed - calling a working setup broken sends people
+    # chasing a permission they do not need.
+    check = {'name': 'Sender mailbox'}
+    if response.status_code == 200:
+        check.update(ok=True, detail=f"{response.json().get('displayName', sender)} <{sender}>")
+    elif response.status_code == 403:
+        check.update(ok=False, warn=True,
+                     detail=(f"Could not verify '{sender}' - this app cannot read the directory "
+                             "(needs User.Read.All). Sending is unaffected; Mail.Send is what matters."))
+    elif response.status_code == 404:
+        check.update(ok=False, detail=f"No mailbox found for '{sender}' in this tenant - check the sender address.")
+    else:
+        check.update(ok=False, detail=f"Graph returned {response.status_code}: {response.text[:150]}")
+    checks.append(check)
+
+    # A warning is not a failure - only hard failures block sending.
+    return {'success': all(c['ok'] or c.get('warn') for c in checks), 'checks': checks}
 
 
 def get_recipients(trip_order):
