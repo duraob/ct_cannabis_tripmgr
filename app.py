@@ -847,6 +847,80 @@ def manifest_email_preview(trip_id, trip_order_id):
         return jsonify({'error': str(e)}), 400
 
 
+def _stop_customer_label(trip_order):
+    """How a stop is named to the user.
+
+    One LeafTrade customer can have several stores on the same trip, so the location
+    name is what tells the user which mapping to go fix.
+    """
+    mapping = trip_order.location_mapping
+    if mapping and mapping.customer:
+        customer = mapping.customer
+        if customer.name and customer.name != customer.customer_name:
+            return f"{customer.customer_name} - {customer.name}"
+        return customer.customer_name
+    if trip_order.vendor:
+        return trip_order.vendor.name
+    return f"Order {trip_order.order_id}"
+
+
+@app.route('/api/trips/<int:trip_id>/email-all-preview')
+@login_required
+def manifest_email_all_preview(trip_id):
+    """What Email All would send, and what is blocking it.
+
+    Each sendable stop comes back with its recipients and rendered message already
+    resolved, so the browser can drive the batch through the existing per-stop send
+    endpoint without a second round trip for every stop.
+    """
+    logger = logging.getLogger('app.manifest_email_all_preview')
+    try:
+        trip = Trip.query.get_or_404(trip_id)
+
+        from api.email_service import get_recipients, render_template_text
+
+        subject_template = get_preference('manifest_email_subject', DEFAULT_EMAIL_SUBJECT)
+        body_template = get_preference('manifest_email_body', DEFAULT_EMAIL_BODY)
+
+        stops, blocked = [], []
+        for trip_order in sorted(trip.trip_orders, key=lambda t: t.sequence_order or 0):
+            customer = _stop_customer_label(trip_order)
+
+            if not trip_order.manifest_id:
+                blocked.append({'customer': customer,
+                                'reason': 'No manifest yet - execute the trip first'})
+                continue
+            if not trip_order.location_mapping_id:
+                blocked.append({'customer': customer,
+                                'reason': 'Not mapped to a dispensary location - fix it on the Mapping page'})
+                continue
+
+            to_addresses, cc_addresses = get_recipients(trip_order)
+            if not to_addresses:
+                blocked.append({'customer': customer,
+                                'reason': 'No manifest email address - add a recipient on the Mapping page'})
+                continue
+
+            stops.append({
+                'trip_order_id': trip_order.id,
+                'order_id': trip_order.order_id,
+                'customer': customer,
+                'manifest_id': trip_order.manifest_id,
+                'to': to_addresses,
+                'cc': cc_addresses,
+                'subject': render_template_text(subject_template, trip_order),
+                'body': render_template_text(body_template, trip_order),
+                'sent_at': trip_order.manifest_sent_at.strftime('%b %d, %Y at %I:%M %p')
+                           if trip_order.manifest_sent_at else None,
+                'send_count': trip_order.manifest_send_count or 0,
+            })
+
+        return jsonify({'success': True, 'stops': stops, 'blocked': blocked})
+    except Exception as e:
+        logger.error(f"Failed to build Email All preview for trip {trip_id}: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 400
+
+
 @app.route('/api/trips/<int:trip_id>/stops/<int:trip_order_id>/send-manifest', methods=['POST'])
 @login_required
 def send_manifest(trip_id, trip_order_id):
@@ -1215,6 +1289,7 @@ def get_trips():
                 'status': trip.status,
                 'execution_status': trip.execution_status or 'pending',
                 'inventory_processed_in_biotrack': any(to.status in ('sublotted', 'inventory_moved') for to in trip.trip_orders),
+                'has_manifests': any(to.manifest_id for to in trip.trip_orders),
                 'date_created': trip.date_created.isoformat() if trip.date_created else None,
                 'date_transacted': trip.date_transacted.isoformat() if trip.date_transacted else None,
                 'delivery_date': trip.delivery_date.isoformat() if trip.delivery_date else None,

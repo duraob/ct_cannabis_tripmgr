@@ -120,6 +120,8 @@
     </div>
 </div>
 
+{% include '_email_all.html' %}
+
 <script>
 async function executeTrip(tripId) {
     if (!confirm('Are you sure you want to execute this trip? This will create manifests and send notifications.')) {
@@ -716,6 +718,7 @@ function renderTrips() {
                     `<button onclick="executeTrip(${trip.id})" class="text-green-600 hover:text-green-900 mr-3">Execute</button>` :
                     ''
                 }
+                ${trip.has_manifests ? `<button onclick="openEmailAll(${trip.id})" class="text-blue-600 hover:text-blue-900 mr-3">Email All</button>` : ''}
                 <a href="/trips/${trip.id}" class="text-blue-600 hover:text-blue-900">View Details</a>
             </td>
         `;

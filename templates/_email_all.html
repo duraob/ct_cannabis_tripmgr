@@ -1,0 +1,358 @@
+<!--
+  Email All Manifests - shared by the trips list and the trip detail page.
+
+  The batch is driven from the browser, one stop at a time through the existing
+  per-stop send endpoint. A server-side loop would sit well past the gunicorn worker
+  timeout on a long trip, and this way one dispensary failing does not take the rest
+  of the trip down with it. The trade-off is that the run only lives as long as the
+  page does, which is why the dialog says so plainly and guards the unload.
+-->
+<div id="emailAllModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50">
+    <div class="relative top-10 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white mb-10">
+        <div class="flex items-center justify-between mb-1">
+            <h3 class="text-lg font-semibold text-gray-900">Email All Manifests</h3>
+            <button type="button" id="email-all-close" onclick="closeEmailAll()" class="text-gray-400 hover:text-gray-600">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+        <p class="text-sm text-gray-600 mb-4" id="email-all-subtitle"></p>
+
+        <div id="email-all-loading" class="py-8 text-center text-gray-500">Checking recipients...</div>
+
+        <div id="email-all-body" class="hidden space-y-4">
+            <div id="email-all-blocked" class="hidden p-3 bg-red-50 border border-red-200 rounded-md">
+                <p class="text-sm font-medium text-red-800 mb-2" id="email-all-blocked-title"></p>
+                <ul class="text-sm text-red-700 space-y-1" id="email-all-blocked-list"></ul>
+                <p class="text-xs text-red-600 mt-2">
+                    Nothing has been sent. Add the missing recipients on the Mapping page, then run this again.
+                </p>
+            </div>
+
+            <div id="email-all-ready" class="hidden">
+                <p class="text-sm font-medium text-gray-700 mb-2" id="email-all-ready-title"></p>
+                <ul class="border border-gray-200 rounded-md divide-y divide-gray-200 max-h-64 overflow-y-auto"
+                    id="email-all-list"></ul>
+                <p class="text-xs text-gray-500 mt-2" id="email-all-template-note">
+                    Uses the subject and message from the Config page. To change the wording for a single stop,
+                    use Email Manifest on that stop instead.
+                </p>
+            </div>
+
+            <div id="email-all-resend-row" class="hidden">
+                <label class="flex items-center text-sm text-gray-700">
+                    <input type="checkbox" id="email-all-resend" onchange="renderEmailAll()"
+                           class="mr-2 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                    <span id="email-all-resend-label"></span>
+                </label>
+            </div>
+
+            <div id="email-all-warning" class="p-3 bg-yellow-50 border border-yellow-200 rounded-md text-sm text-yellow-800">
+                <span class="font-medium">Keep this window open until sending finishes.</span>
+                Manifests are sent one at a time. If you close this window, navigate away, or cancel partway
+                through, the remaining manifests will not be sent - the ones already delivered stay delivered.
+            </div>
+
+            <div id="email-all-progress" class="hidden">
+                <div class="flex items-center justify-between text-sm text-gray-700 mb-1">
+                    <span id="email-all-progress-label"></span>
+                    <span id="email-all-progress-count" class="tabular-nums"></span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2">
+                    <div id="email-all-progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <div id="email-all-error" class="hidden p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700"></div>
+
+            <div class="flex space-x-3 pt-2">
+                <button type="button" id="email-all-cancel" onclick="closeEmailAll()"
+                        class="flex-1 px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-700 font-medium rounded-md">
+                    Cancel
+                </button>
+                <button type="button" id="email-all-send" onclick="startEmailAll()"
+                        class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md disabled:bg-gray-400 disabled:cursor-not-allowed">
+                    Send All
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ---- Email All Manifests ----
+
+let emailAllTripId = null;
+let emailAllStops = [];
+let emailAllBlocked = [];
+let emailAllSending = false;
+let emailAllStopRequested = false;
+let emailAllResults = {};   // trip_order_id -> {ok: bool, error: string}
+
+// The batch only exists while this page does, so the browser's own "leave site?"
+// prompt is the last line of defence against a half-sent trip.
+window.addEventListener('beforeunload', function(event) {
+    if (!emailAllSending) return;
+    event.preventDefault();
+    event.returnValue = '';
+    return '';
+});
+
+async function openEmailAll(tripId) {
+    emailAllTripId = tripId;
+    emailAllStops = [];
+    emailAllBlocked = [];
+    emailAllSending = false;
+    emailAllStopRequested = false;
+    emailAllResults = {};
+
+    document.getElementById('email-all-subtitle').textContent = `Trip #${tripId}`;
+    document.getElementById('email-all-loading').classList.remove('hidden');
+    document.getElementById('email-all-body').classList.add('hidden');
+    document.getElementById('email-all-error').classList.add('hidden');
+    document.getElementById('email-all-progress').classList.add('hidden');
+    document.getElementById('email-all-resend').checked = false;
+    document.getElementById('emailAllModal').classList.remove('hidden');
+
+    try {
+        const response = await fetch(`/api/trips/${tripId}/email-all-preview`);
+        const data = await response.json();
+
+        if (!data.success) {
+            showEmailAllError(data.error || 'Could not check recipients');
+        } else {
+            emailAllStops = data.stops;
+            emailAllBlocked = data.blocked;
+        }
+    } catch (error) {
+        showEmailAllError('Could not check recipients');
+    }
+
+    document.getElementById('email-all-loading').classList.add('hidden');
+    document.getElementById('email-all-body').classList.remove('hidden');
+    renderEmailAll();
+}
+
+function emailAllQueue() {
+    const resend = document.getElementById('email-all-resend').checked;
+    return emailAllStops.filter(stop => resend || !stop.sent_at);
+}
+
+function renderEmailAll() {
+    const blockedBox = document.getElementById('email-all-blocked');
+    const readyBox = document.getElementById('email-all-ready');
+    const resendRow = document.getElementById('email-all-resend-row');
+    const sendButton = document.getElementById('email-all-send');
+
+    // A stop with no recipient blocks the whole trip. Sending the rest would leave a
+    // half-emailed trip nobody remembers to finish, so this is deliberately all or nothing.
+    if (emailAllBlocked.length > 0) {
+        document.getElementById('email-all-blocked-title').textContent =
+            `${emailAllBlocked.length} stop${emailAllBlocked.length === 1 ? '' : 's'} cannot be emailed:`;
+        document.getElementById('email-all-blocked-list').innerHTML = emailAllBlocked.map(item =>
+            `<li><span class="font-medium">${escapeEmailAll(item.customer)}</span> &mdash; ${escapeEmailAll(item.reason)}</li>`
+        ).join('');
+        blockedBox.classList.remove('hidden');
+    } else {
+        blockedBox.classList.add('hidden');
+    }
+
+    const alreadySent = emailAllStops.filter(stop => stop.sent_at);
+    if (alreadySent.length > 0 && emailAllBlocked.length === 0) {
+        document.getElementById('email-all-resend-label').textContent =
+            `Also resend to the ${alreadySent.length} stop${alreadySent.length === 1 ? '' : 's'} already emailed`;
+        resendRow.classList.remove('hidden');
+    } else {
+        resendRow.classList.add('hidden');
+    }
+
+    const queue = emailAllQueue();
+    const skipped = emailAllStops.filter(stop => !queue.includes(stop));
+
+    if (emailAllStops.length > 0) {
+        document.getElementById('email-all-ready-title').textContent =
+            `Sending ${queue.length} of ${emailAllStops.length} stop${emailAllStops.length === 1 ? '' : 's'}`;
+        document.getElementById('email-all-list').innerHTML =
+            queue.map(stop => emailAllRow(stop, false)).join('') +
+            skipped.map(stop => emailAllRow(stop, true)).join('');
+        readyBox.classList.remove('hidden');
+    } else {
+        readyBox.classList.add('hidden');
+    }
+
+    sendButton.disabled = emailAllSending || emailAllBlocked.length > 0 || queue.length === 0;
+    if (!emailAllSending) {
+        sendButton.textContent = queue.length > 0
+            ? `Send ${queue.length} Manifest${queue.length === 1 ? '' : 's'}`
+            : 'Send All';
+    }
+}
+
+function emailAllRow(stop, skipped) {
+    const result = emailAllResults[stop.trip_order_id];
+    let badge = '';
+
+    if (result && result.ok) {
+        badge = '<span class="text-xs font-medium text-green-700">Sent</span>';
+    } else if (result) {
+        badge = `<span class="text-xs font-medium text-red-700" title="${escapeEmailAll(result.error)}">Failed</span>`;
+    } else if (skipped) {
+        badge = `<span class="text-xs text-gray-500">Already emailed ${escapeEmailAll(stop.sent_at)}</span>`;
+    } else if (stop.sent_at) {
+        badge = '<span class="text-xs text-yellow-700">Resend</span>';
+    }
+
+    const failure = result && !result.ok
+        ? `<p class="text-xs text-red-600 mt-1">${escapeEmailAll(result.error)}</p>` : '';
+
+    return `
+        <li class="px-3 py-2 ${skipped ? 'bg-gray-50 text-gray-500' : ''}">
+            <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <p class="text-sm font-medium ${skipped ? 'text-gray-500' : 'text-gray-900'} truncate">${escapeEmailAll(stop.customer)}</p>
+                    <p class="text-xs text-gray-500 truncate">Manifest ${escapeEmailAll(stop.manifest_id)} &middot; ${escapeEmailAll(stop.to.join(', '))}</p>
+                    ${failure}
+                </div>
+                <div class="flex-shrink-0">${badge}</div>
+            </div>
+        </li>
+    `;
+}
+
+async function startEmailAll() {
+    const queue = emailAllQueue();
+    if (queue.length === 0) return;
+
+    emailAllSending = true;
+    emailAllStopRequested = false;
+    emailAllResults = {};
+
+    const sendButton = document.getElementById('email-all-send');
+    const cancelButton = document.getElementById('email-all-cancel');
+    const progress = document.getElementById('email-all-progress');
+
+    sendButton.disabled = true;
+    document.getElementById('email-all-close').classList.add('hidden');
+    document.getElementById('email-all-resend').disabled = true;
+    document.getElementById('email-all-error').classList.add('hidden');
+    cancelButton.textContent = 'Stop After This One';
+    cancelButton.onclick = requestEmailAllStop;
+    progress.classList.remove('hidden');
+
+    let sent = 0, failed = 0, index = 0;
+
+    for (const stop of queue) {
+        if (emailAllStopRequested) break;
+        index++;
+
+        sendButton.textContent = `Sending ${index} of ${queue.length}...`;
+        document.getElementById('email-all-progress-label').textContent =
+            `Sending to ${stop.customer} - do not close this window`;
+        document.getElementById('email-all-progress-count').textContent = `${index} of ${queue.length}`;
+        document.getElementById('email-all-progress-bar').style.width = `${((index - 1) / queue.length) * 100}%`;
+
+        try {
+            const response = await fetch(`/api/trips/${emailAllTripId}/stops/${stop.trip_order_id}/send-manifest`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ to: stop.to, cc: stop.cc, subject: stop.subject, body: stop.body })
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                emailAllResults[stop.trip_order_id] = { ok: true };
+                sent++;
+            } else {
+                emailAllResults[stop.trip_order_id] = { ok: false, error: data.error || 'Send failed' };
+                failed++;
+            }
+        } catch (error) {
+            // One dispensary failing must not abandon the rest of the trip.
+            emailAllResults[stop.trip_order_id] = { ok: false, error: 'Send failed - no response from the server' };
+            failed++;
+        }
+
+        renderEmailAllProgressList(queue, skipListFor(queue));
+        document.getElementById('email-all-progress-bar').style.width = `${(index / queue.length) * 100}%`;
+    }
+
+    emailAllSending = false;
+    finishEmailAll(queue.length, sent, failed);
+}
+
+function skipListFor(queue) {
+    return emailAllStops.filter(stop => !queue.includes(stop));
+}
+
+function renderEmailAllProgressList(queue, skipped) {
+    document.getElementById('email-all-list').innerHTML =
+        queue.map(stop => emailAllRow(stop, false)).join('') +
+        skipped.map(stop => emailAllRow(stop, true)).join('');
+}
+
+function requestEmailAllStop() {
+    emailAllStopRequested = true;
+    document.getElementById('email-all-cancel').disabled = true;
+    document.getElementById('email-all-cancel').textContent = 'Stopping...';
+    document.getElementById('email-all-progress-label').textContent =
+        'Finishing the current manifest, then stopping - do not close this window';
+}
+
+function finishEmailAll(total, sent, failed) {
+    const remaining = total - sent - failed;
+
+    const cancelButton = document.getElementById('email-all-cancel');
+    cancelButton.disabled = false;
+    cancelButton.textContent = 'Close';
+    cancelButton.onclick = closeEmailAllAndReload;
+    document.getElementById('email-all-close').classList.remove('hidden');
+    document.getElementById('email-all-resend').disabled = false;
+
+    const sendButton = document.getElementById('email-all-send');
+    sendButton.textContent = 'Done';
+    sendButton.disabled = true;
+
+    document.getElementById('email-all-progress-bar').style.width = '100%';
+    document.getElementById('email-all-progress-count').textContent = `${sent} of ${total}`;
+
+    let summary = `${sent} manifest${sent === 1 ? '' : 's'} sent`;
+    if (failed > 0) summary += `, ${failed} failed`;
+    if (remaining > 0) summary += `, ${remaining} not sent (stopped early)`;
+    document.getElementById('email-all-progress-label').textContent = summary;
+
+    const warning = document.getElementById('email-all-warning');
+    if (failed > 0 || remaining > 0) {
+        warning.className = 'p-3 bg-yellow-50 border border-yellow-200 rounded-md text-sm text-yellow-800';
+        warning.innerHTML = '<span class="font-medium">This trip is only partly emailed.</span> ' +
+            'The manifests marked Sent were delivered and will not be sent twice. ' +
+            'Run Email All again to send the rest.';
+    } else {
+        warning.className = 'p-3 bg-green-50 border border-green-200 rounded-md text-sm text-green-800';
+        warning.innerHTML = '<span class="font-medium">All manifests sent.</span> Every stop on this trip has been emailed.';
+    }
+}
+
+function closeEmailAll() {
+    if (emailAllSending) return;   // the close control is hidden mid-send anyway
+    document.getElementById('emailAllModal').classList.add('hidden');
+    if (Object.keys(emailAllResults).length > 0) location.reload();  // surface the new "Emailed ..." badges
+}
+
+function closeEmailAllAndReload() {
+    document.getElementById('emailAllModal').classList.add('hidden');
+    location.reload();
+}
+
+function showEmailAllError(message) {
+    const box = document.getElementById('email-all-error');
+    box.textContent = message;
+    box.classList.remove('hidden');
+}
+
+function escapeEmailAll(value) {
+    const div = document.createElement('div');
+    div.textContent = value == null ? '' : value;
+    return div.innerHTML;
+}
+</script>

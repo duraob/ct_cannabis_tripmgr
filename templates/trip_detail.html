@@ -33,6 +33,12 @@
                     Execute Trip
                 </button>
                 {% endif %}
+                {% if trip.trip_orders | selectattr('manifest_id') | list %}
+                <button onclick="openEmailAll({{ trip.id }})"
+                        class="ml-3 inline-flex items-center justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:w-auto">
+                    Email All Manifests
+                </button>
+                {% endif %}
             </div>
         </div>
         
@@ -362,6 +368,8 @@
         </div>
     </div>
 </div>
+
+{% include '_email_all.html' %}
 
 <!-- Send Manifest Modal -->
 <div id="sendManifestModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50">
