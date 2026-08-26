@@ -64,6 +64,26 @@
                                 Inventory moved
                             </span>
                             {% endif %}
+                            {% set manifested = trip.trip_orders | selectattr('manifest_id') | list %}
+                            {% set emailed = trip.trip_orders | selectattr('manifest_sent_at') | list %}
+                            {% if manifested %}
+                                {% if emailed | length == 0 %}
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800"
+                                      title="No customer on this trip has been emailed their manifest yet.">
+                                    Not emailed
+                                </span>
+                                {% elif emailed | length < manifested | length %}
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800"
+                                      title="{{ manifested | length - emailed | length }} customer(s) on this trip have not been emailed their manifest.">
+                                    Emailed {{ emailed | length }} of {{ manifested | length }}
+                                </span>
+                                {% else %}
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
+                                      title="Every customer on this trip has been emailed their manifest.">
+                                    Emailed
+                                </span>
+                                {% endif %}
+                            {% endif %}
                         </div>
                         <div class="mt-3">
                             <label for="status-override" class="block text-xs font-medium text-gray-500 mb-1">Override status</label>
