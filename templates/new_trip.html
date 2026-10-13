@@ -87,8 +87,7 @@
                                     <div id="usableWeightTotals" class="hidden text-sm mb-2">
                                         <span class="text-gray-700">Usable weight selected: </span>
                                         <strong id="totalUsableWeightSelected" class="text-gray-900">0</strong>
-                                        <span class="text-gray-700"> g of 907 g limit</span>
-                                        <div id="weightLimitFlagSelected" class="hidden mt-1 text-amber-700 text-sm font-medium">⚠ Selected orders exceed the 2 lb state limit — 2 drivers required for this trip.</div>
+                                        <span class="text-gray-700"> g</span>
                                     </div>
                                     <div id="ordersWeightsLoading" class="hidden flex items-center gap-2 text-sm text-blue-600 mb-2">
                                         <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -172,7 +171,6 @@
                             <!-- Trip Summary -->
                             <div id="tripSummary" class="hidden">
                                 <h4 class="text-md font-medium text-gray-900 mb-4">Trip Summary</h4>
-                                <div id="weightLimitFlagTrip" class="hidden mb-3 p-2 rounded bg-amber-100 text-amber-800 text-sm font-medium">⚠ Trip exceeds 2 lb state limit — 2 drivers required.</div>
                                 <div class="bg-gray-50 rounded-lg p-4">
                                     <!-- Resources Section -->
                                     <div class="mb-4 pb-4 border-b border-gray-200">
@@ -241,8 +239,6 @@ let allVehicles = [];
 let currentDisplayedOrders = [];
 /** Map order id (string) -> total_usable_weight from API; used as source of truth for per-order weight. */
 let orderWeightsMap = {};
-/** State limit: 2 lbs in grams. Flag when order or trip total exceeds this. */
-const STATE_LIMIT_GRAMS = 907.18;
 
 // Load orders from LeafTrade API
 async function loadOrders() {
@@ -338,7 +334,6 @@ function displayOrders(orders) {
 
     const ordersHtml = orders.map(order => {
         const orderWeight = getWeight(order);
-        const overLimit = orderWeight > STATE_LIMIT_GRAMS;
         return `
         <div class="flex items-center space-x-3 p-3 border border-gray-200 rounded-md hover:bg-gray-50" id="order_container_${order.id}">
             <input type="checkbox" 
@@ -350,7 +345,7 @@ function displayOrders(orders) {
                 <div class="text-sm font-medium text-gray-900">${order.customer_name || 'Unknown Customer'}</div>
                 <div class="text-sm text-gray-500">Order ID: ${order.id}</div>
                 <div class="text-sm text-gray-500">Delivery Date: ${order.delivery_date || 'Not specified'}</div>
-                <div class="text-sm text-gray-600">Usable weight: ${orderWeight.toFixed(1)} g${overLimit ? ' <span class="text-amber-600 font-medium">(over 2 lb limit)</span>' : ''}</div>
+                <div class="text-sm text-gray-600">Usable weight: ${orderWeight.toFixed(1)} g</div>
             </div>
             <div class="flex items-center space-x-2" id="stop_input_${order.id}" style="display: none;">
                 <label class="text-xs text-gray-600">Stop #</label>
@@ -384,13 +379,7 @@ function updateUsableWeightTotals() {
         const cb = document.getElementById('order_' + o.id);
         return cb && cb.checked;
     }).reduce((s, o) => s + getWeight(o), 0);
-    const overLimit = selectedTotal > STATE_LIMIT_GRAMS;
     selectedEl.textContent = selectedTotal.toFixed(1);
-    selectedEl.className = overLimit ? 'text-amber-700' : 'text-gray-900';
-    const flagSelected = document.getElementById('weightLimitFlagSelected');
-    if (flagSelected) {
-        flagSelected.classList.toggle('hidden', !overLimit);
-    }
 }
 
 // Filter orders by delivery date
@@ -523,25 +512,11 @@ function updateTripSummary() {
     
     if (selectedOrders.length === 0) {
         tripSummary.classList.add('hidden');
-        const tripLimitFlag = document.getElementById('weightLimitFlagTrip');
-        if (tripLimitFlag) tripLimitFlag.classList.add('hidden');
         return;
     }
     
     tripSummary.classList.remove('hidden');
-    
-    const getWeightSummary = (o) => {
-        const fromOrder = Number(o.total_usable_weight);
-        if (!isNaN(fromOrder) && fromOrder > 0) return fromOrder;
-        return Number(orderWeightsMap[String(o.id).trim()] ?? o.totalUsableWeight ?? 0) || 0;
-    };
-    const selectedTotalG = selectedOrders.reduce((s, o) => s + getWeightSummary(o), 0);
-    const tripLimitFlag = document.getElementById('weightLimitFlagTrip');
-    if (tripLimitFlag) {
-        if (selectedTotalG > STATE_LIMIT_GRAMS) tripLimitFlag.classList.remove('hidden');
-        else tripLimitFlag.classList.add('hidden');
-    }
-    
+
     // Sort orders by stop number
     const sortedOrders = [...selectedOrders].sort((a, b) => a.stopNumber - b.stopNumber);
     
