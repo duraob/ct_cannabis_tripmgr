@@ -50,11 +50,6 @@ def read_log_file(log_file_path: str, max_lines: int = 1000) -> List[Dict[str, A
     return entries
 
 
-def filter_logs_by_level(entries: List[Dict[str, Any]], level: str) -> List[Dict[str, Any]]:
-    """Filter log entries by level."""
-    return [entry for entry in entries if entry.get('level') == level.upper()]
-
-
 def filter_logs_by_time(entries: List[Dict[str, Any]], 
                        start_time: Optional[datetime] = None,
                        end_time: Optional[datetime] = None) -> List[Dict[str, Any]]:
@@ -80,18 +75,6 @@ def filter_logs_by_time(entries: List[Dict[str, Any]],
             continue
     
     return filtered
-
-
-def filter_logs_by_logger(entries: List[Dict[str, Any]], logger_name: str) -> List[Dict[str, Any]]:
-    """Filter log entries by logger name."""
-    return [entry for entry in entries if entry.get('logger') == logger_name]
-
-
-def filter_logs_by_message(entries: List[Dict[str, Any]], search_term: str) -> List[Dict[str, Any]]:
-    """Filter log entries by message content."""
-    search_term_lower = search_term.lower()
-    return [entry for entry in entries 
-            if search_term_lower in entry.get('message', '').lower()]
 
 
 def print_log_summary(entries: List[Dict[str, Any]]):

@@ -9,8 +9,7 @@ from datetime import datetime
 
 from sqlalchemy.exc import IntegrityError
 from models import db, Trip, TripOrder, TripOrderItem, Driver, Vehicle, TripExecution
-from utils.timezone import get_est_now, get_est_now_naive
-import re
+from utils.timezone import get_est_now_naive
 
 logger = logging.getLogger('utils.trip_execution')
 
@@ -54,7 +53,7 @@ def execute_trip_background_job(trip_id):
                 raise Exception("Driver or vehicle information not found")
             
             # Initialize BioTrack API
-            from api.biotrack import get_auth_token, post_sublot_bulk_create, post_sublot_move, post_manifest
+            from api.biotrack import get_auth_token
             from api.leaftrade import get_order_details
             
             # Authenticate with BioTrack

@@ -380,59 +380,9 @@ if token:
 
 ### Inventory Management Functions
 
-#### `post_sublot(token: str, sublot_id: str, move_info: List[Dict[str, str]]) -> Optional[List[str]]`
-
-Creates inventory sublot splits in BioTrack. This function splits an inventory item into multiple sublots.
-
-**Parameters:**
-- `token` (str): Authentication token
-- `sublot_id` (str): ID of the sublot to split
-- `move_info` (List[Dict]): List of dictionaries with:
-  - `barcodeid` (str): Barcode ID of the item to split
-  - `remove_quantity` (str): Quantity to remove from the original item
-
-**Returns:**
-- `List[str]`: List of new barcode IDs created
-- `Dict`: Error response if failed (contains `success: False`, `error`, `errorcode`)
-- `None`: If request failed
-
-**API Action:** `inventory_split`
-
-**Example Input:**
-```python
-move_info = [
-    {
-        "barcodeid": "6853296789574117",
-        "remove_quantity": "693.00"
-    },
-    {
-        "barcodeid": "6853296789574118",
-        "remove_quantity": "252.00"
-    }
-]
-
-result = post_sublot(token, "sublot_123", move_info)
-# Returns: ["6853296789574115", "6853296789574116"]
-```
-
-**Example API Response:**
-```json
-{
-    "sessiontime": "1384476925",
-    "barcode_id": [
-        "6853296789574115",
-        "6853296789574116"
-    ],
-    "success": "1",
-    "transactionid": "3312"
-}
-```
-
----
-
 #### `post_sublot_bulk_create(token: str, sublot_data: List[Dict[str, str]]) -> Optional[List[str]]`
 
-Creates inventory sublots in bulk. This is a convenience function that uses the same API endpoint as `post_sublot` but with a special `sublot_id` value.
+Creates inventory sublots in bulk by splitting inventory items (BioTrack `inventory_split`).
 
 **Parameters:**
 - `token` (str): Authentication token

@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Shipping - Trip Manager{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-2 sm:px-4">
+    <h1 class="text-2xl font-bold text-gray-900 mt-4">Shipping</h1>
+    <p class="text-gray-600 mt-1">Pick a delivery date to print pick lists and the fulfillment summary.</p>
+
+    <form method="get" class="mt-4 flex flex-wrap items-end gap-3">
+        <div>
+            <label for="date" class="block text-sm font-medium text-gray-700">Delivery date</label>
+            <input type="date" id="date" name="date" value="{{ delivery_date }}" onchange="this.form.submit()"
+                   class="mt-1 block rounded-md border border-gray-300 px-3 py-2 min-h-[44px] text-sm shadow-sm focus:border-primary focus:ring-1 focus:ring-primary">
+        </div>
+        {% if orders %}
+        <a href="{{ url_for('shipping_pick_lists', delivery_date=delivery_date) }}" data-download
+           class="inline-flex items-center px-4 min-h-[44px] rounded-md bg-primary text-white text-sm font-medium hover:opacity-90">Download all pick lists</a>
+        <a href="{{ url_for('shipping_summary', delivery_date=delivery_date) }}" data-download
+           class="inline-flex items-center px-4 min-h-[44px] rounded-md border border-primary text-primary text-sm font-medium hover:bg-blue-50">Download summary</a>
+        {% endif %}
+    </form>
+
+    {% if error %}
+    <div class="mt-4 p-4 rounded-lg bg-red-50 border border-red-200 text-red-800">{{ error }}</div>
+    {% elif not orders %}
+    <p class="mt-6 text-gray-600">No approved orders deliver on {{ delivery_date }}.</p>
+    {% else %}
+    <div class="mt-4 rounded-xl border border-gray-200 bg-white shadow-sm overflow-x-auto">
+        <table class="min-w-full">
+            <thead>
+                <tr class="bg-gray-100 border-b border-gray-200">
+                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Order</th>
+                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Customer</th>
+                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Address</th>
+                    <th class="px-4 py-3"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for order in orders %}
+                <tr>
+                    <td class="px-4 py-3 text-sm text-gray-900">#{{ order.invoice_id }}</td>
+                    <td class="px-4 py-3 text-sm text-gray-900">{{ order.customer_name }}</td>
+                    <td class="px-4 py-3 text-sm text-gray-600">{{ order.customer_location }}</td>
+                    <td class="px-4 py-3 text-right">
+                        <a href="{{ url_for('shipping_pick_list', order_id=order.order_id) }}" data-download
+                           class="inline-flex items-center px-4 min-h-[44px] rounded-md border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 whitespace-nowrap">Pick list</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p class="mt-2 text-sm text-gray-500">{{ orders|length }} approved order{{ '' if orders|length == 1 else 's' }}</p>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Downloads go through fetch so the button can show progress and surface LeafTrade errors.
+document.querySelectorAll('[data-download]').forEach(button => {
+    button.addEventListener('click', async event => {
+        event.preventDefault();
+        if (button.dataset.busy) return;
+        const label = button.textContent;
+        button.dataset.busy = '1';
+        button.textContent = 'Building…';
+        button.classList.add('opacity-60');
+        try {
+            const response = await fetch(button.href);
+            if (!response.ok) {
+                const body = await response.json().catch(() => ({}));
+                throw new Error(body.error || response.statusText);
+            }
+            const filename = response.headers.get('Content-Disposition').split('filename=')[1];
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(await response.blob());
+            link.download = filename;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+        } catch (error) {
+            alert(`Download failed: ${error.message}`);
+        }
+        button.textContent = label;
+        button.classList.remove('opacity-60');
+        delete button.dataset.busy;
+    });
+});
+</script>
+{% endblock %}

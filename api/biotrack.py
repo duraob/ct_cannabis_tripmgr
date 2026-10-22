@@ -22,7 +22,6 @@ import logging
 import time
 import json
 from typing import Dict, List, Optional, Any, Union
-from datetime import datetime, date
 from functools import wraps
 import requests
 from requests.exceptions import RequestException, Timeout, ConnectionError
@@ -104,14 +103,6 @@ def validate_token(token: str) -> bool:
         logger.error("Invalid or missing authentication token")
         return False
     return True
-
-
-def validate_training_mode(training: str) -> str:
-    """Validate and normalize training mode parameter."""
-    if training not in ["0", "1"]:
-        logger.warning(f"Invalid training mode '{training}', defaulting to '0'")
-        return "0"
-    return training
 
 
 @retry_on_failure()
@@ -600,14 +591,6 @@ def get_inventory_qa_check(token: str, barcode_id: str) -> Optional[Dict[str, An
         logger.error("Barcode ID is required for QA check")
         return None
     
-    # Import training mode function from app
-    import sys
-    import os
-    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from app import get_training_mode
-    
-    training = get_training_mode()
-    
     data = {
         "API": "4.0",
         "action": "inventory_qa_check_all",
@@ -674,105 +657,6 @@ def get_inventory_qa_check(token: str, barcode_id: str) -> Optional[Dict[str, An
             
     except Exception as e:
         logger.warning(f"Failed to get QA check for barcode {barcode_id}: {e}")
-        return None
-
-
-def post_sublot(
-    token: str, 
-    sublot_id: str, 
-    move_info: List[Dict[str, str]]
-) -> Optional[List[str]]:
-    """
-    Create inventory sublot splits in BioTrack.
-
-    Description: This function is used to create inventory sublot splits in BioTrack.
-    It is used to split an inventory item into multiple sublots.
-    It is used to create a new sublot for each item in the move_info list.
-    
-    Example Input: 
-    {
-        "API": "4.0",
-        "action": "inventory_split",
-        "data": [
-            {
-                "barcodeid": "6853296789574117",
-                "remove_quantity": "693.00"
-            },
-            {
-                "barcodeid": "6853296789574118",
-                "remove_quantity": "252.00"
-            }
-        ]
-    }
-
-    Example Output:
-    {
-        "sessiontime": "1384476925",
-        "barcode_id": [
-            "6853296789574115",
-            "6853296789574116"
-        ],
-        "success": "1",
-        "transactionid": "3312"
-    }
-
-    Args:
-        token: Authentication token
-        sublot_id: ID of the sublot to split
-        move_info: List of dictionaries with "barcodeid" and "remove_quantity"
-    
-    Returns:
-        List of new barcode IDs or None if failed
-    """
-    if not validate_token(token):
-        return None
-    
-    if not sublot_id or not move_info:
-        logger.error("Invalid sublot_id or move_info provided")
-        return None
-    
-    # Import training mode function from app
-    import sys
-    import os
-    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from app import get_training_mode
-    
-    training = get_training_mode()
-    
-    # Validate move_info structure
-    for item in move_info:
-        if not isinstance(item, dict) or "barcodeid" not in item or "remove_quantity" not in item:
-            logger.error("Invalid move_info structure - each item must have 'barcodeid' and 'remove_quantity'")
-            return None
-    
-    data = {
-        "API": "4.0",
-        "action": "inventory_split",
-        "sessionid": token,
-        "sublot_id": sublot_id,
-        "data": move_info,
-        "training": training
-    }
-    
-    try:
-        response_data = _make_api_request(data, "sublot_split")
-        
-        if response_data and str(response_data.get("success")) == "1":
-            sublot_ids = response_data.get("barcode_id", [])
-            logger.info(f"Successfully created {len(sublot_ids)} sublot splits")
-            return sublot_ids
-        else:
-            logger.error(f"Sublot split failed: {response_data}")
-            # Return the detailed error information for better user feedback
-            return {
-                'success': False,
-                'error': response_data.get('error', 'Unknown BioTrack error'),
-                'errorcode': response_data.get('errorcode', 'Unknown'),
-                'details': response_data
-            }
-            
-    except Exception as e:
-        logger.error(f"Failed to post sublot: {e}")
         return None
 
 

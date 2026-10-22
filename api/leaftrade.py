@@ -31,8 +31,7 @@ import time
 import json
 import threading
 from collections import deque
-from typing import Dict, List, Optional, Any, Union
-from datetime import datetime, date
+from typing import Dict, List, Optional, Any
 from functools import wraps
 import requests
 from requests.exceptions import RequestException, Timeout, ConnectionError
@@ -113,15 +112,6 @@ def validate_api_key(api_key: str) -> bool:
         logger.error("Invalid or missing LeafTrade API key")
         return False
     return True
-
-
-def validate_status(status: str) -> str:
-    """Validate and normalize order status parameter."""
-    valid_statuses = ["new", "approved", "processing", "completed", "cancelled"]
-    if status not in valid_statuses:
-        logger.warning(f"Invalid status '{status}', defaulting to 'approved'")
-        return "approved"
-    return status
 
 
 def _wait_for_rate_limit() -> None:

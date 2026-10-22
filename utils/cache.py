@@ -34,11 +34,3 @@ def clear(key: str = None):
         _cache.pop(key, None)
     else:
         _cache.clear()
-
-def clear_expired():
-    """Remove expired entries from cache"""
-    current_time = time.time()
-    expired_keys = [k for k, v in _cache.items() if current_time > v['expires_at']]
-    for key in expired_keys:
-        del _cache[key]
-

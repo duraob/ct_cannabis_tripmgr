@@ -4,7 +4,6 @@ Following .cursorrules: minimal code, modular functions, production ready
 """
 import os
 import csv
-import time
 import logging
 from datetime import datetime
 from io import StringIO

@@ -1,6 +1,5 @@
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
-from datetime import datetime, UTC
 from utils.timezone import get_est_now_naive
 
 db = SQLAlchemy()
@@ -39,7 +38,6 @@ class Trip(db.Model):
     execution_status = db.Column(db.String(20), default='pending')  # pending, processing, completed, failed
     
     # Relationships
-    orders = db.relationship('Order', backref='trip', lazy=True)
     trip_orders = db.relationship('TripOrder', backref='trip', lazy=True)
     driver1 = db.relationship('Driver', foreign_keys=[driver1_id])
     driver2 = db.relationship('Driver', foreign_keys=[driver2_id])
@@ -52,21 +50,6 @@ class Trip(db.Model):
         db.Index('idx_trip_date_created', 'date_created'),
         db.Index('idx_trip_execution_status', 'execution_status'),
     )
-
-class Order(db.Model):
-    """Order model representing orders from LeafTrade"""
-    id = db.Column(db.Integer, primary_key=True)
-    trip_id = db.Column(db.Integer, db.ForeignKey('trip.id'), nullable=True)
-    leaftrade_order_id = db.Column(db.String(100), unique=True, nullable=False)
-    invoice_id = db.Column(db.String(100))
-    biotrack_manifest_id = db.Column(db.String(100))
-    delivery_date = db.Column(db.Date)
-    customer_name = db.Column(db.String(200))
-    customer_contact = db.Column(db.String(200))
-    customer_location = db.Column(db.String(500))
-    order_status = db.Column(db.String(50), default='pending')
-    created_at = db.Column(db.DateTime, default=get_est_now_naive)
-    updated_at = db.Column(db.DateTime, default=get_est_now_naive, onupdate=get_est_now_naive)
 
 class TripOrder(db.Model):
     """Trip orders junction table with sequence and room override"""
@@ -237,12 +220,6 @@ class APIRefreshLog(db.Model):
     created_at = db.Column(db.DateTime, default=get_est_now_naive)
     
     __table_args__ = (db.UniqueConstraint('api_name', name='unique_api_name'),)
-
-# Junction table for many-to-many relationship between trips and drivers
-trip_drivers = db.Table('trip_drivers',
-    db.Column('trip_id', db.Integer, db.ForeignKey('trip.id'), primary_key=True),
-    db.Column('driver_id', db.Integer, db.ForeignKey('driver.id'), primary_key=True)
-)
 
 class TripExecution(db.Model):
     """Trip execution tracking model"""

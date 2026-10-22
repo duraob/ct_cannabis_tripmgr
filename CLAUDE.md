@@ -32,7 +32,7 @@ There is no test suite, linter, or CI configured. `scripts/` holds one-off verif
 
 Layers:
 - `api/biotrack.py`, `api/leaftrade.py`, `api/googlemaps_client.py` — external API clients. Method-based (except `GoogleMapsClient`), each with its own retry decorator, module-level config read from env at import time, and structured logging.
-- `utils/` — `trip_execution.py` (the background job), `rpt_generation.py` (CSV reports), `task_queue.py` (RQ), `timezone.py`, `cache.py`, `inventory_types.py`, `logging_utils.py`, `log_viewer.py`.
+- `utils/` — `trip_execution.py` (the background job), `rpt_generation.py` (CSV reports), `task_queue.py` (RQ), `timezone.py`, `cache.py`, `inventory_types.py`, `log_viewer.py`.
 - `models.py` — all SQLAlchemy models, single file.
 
 ### Trip execution flow

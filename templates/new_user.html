@@ -47,8 +47,9 @@
                                 id="role" name="role">
                             <option value="user" {% if request.form.get('role') == 'user' %}selected{% endif %}>User</option>
                             <option value="admin" {% if request.form.get('role') == 'admin' %}selected{% endif %}>Admin</option>
+                            <option value="shipping" {% if request.form.get('role') == 'shipping' %}selected{% endif %}>Shipping</option>
                         </select>
-                        <p class="mt-1 text-sm text-gray-500">Admin users have full access to all features including user management.</p>
+                        <p class="mt-1 text-sm text-gray-500">Admin users have full access to all features including user management. Shipping users only see pick lists.</p>
                     </div>
 
                     <div class="flex justify-between">

@@ -1,13 +1,12 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, Response
-from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from flask_login import LoginManager, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import json
 import logging
 import time
-from datetime import datetime, UTC, timedelta, timezone
+from datetime import datetime, UTC, timezone, timedelta
 from utils.timezone import get_est_now, get_est_now_naive
 from dotenv import load_dotenv
 
@@ -29,7 +28,6 @@ def setup_logging():
     
     import logging.handlers
     import json
-    from datetime import datetime
     
     # Create logs directory if it doesn't exist
     log_dir = 'logs'
@@ -159,7 +157,7 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
 }
 
 # Import models and get db instance
-from models import db, User, Trip, Order, TripOrder, TripOrderItem, Driver, Vehicle, Vendor, Room, LocationMapping, Customer, GlobalPreference, TripExecution, EmailContact
+from models import db, User, Trip, TripOrder, Driver, Vehicle, Vendor, LocationMapping, Customer, GlobalPreference, TripExecution, EmailContact
 
 # Initialize extensions
 migrate = Migrate(app, db)
@@ -201,12 +199,6 @@ def datetime_from_timestamp_filter(timestamp, format_str='%Y-%m-%d %H:%M'):
     except (ValueError, TypeError):
         return ''
 
-@app.template_filter('nl2br')
-def nl2br_filter(text):
-    """Convert newlines to HTML line breaks"""
-    if not text:
-        return ''
-    return text.replace('\n', '<br>')
 login_manager.login_view = 'login'
 
 # Initialize database with app context
@@ -216,6 +208,15 @@ with app.app_context():
 @login_manager.user_loader
 def load_user(user_id):
     return db.session.get(User, int(user_id))
+
+SHIPPING_ENDPOINTS = {'shipping', 'shipping_pick_list', 'shipping_pick_lists', 'shipping_summary',
+                      'login', 'logout', 'static'}
+
+@app.before_request
+def restrict_shipping_role():
+    """Shipping users only see pick lists - every other page exposes pricing or BioTrack controls."""
+    if current_user.is_authenticated and current_user.role == 'shipping' and request.endpoint not in SHIPPING_ENDPOINTS:
+        return redirect(url_for('shipping'))
 
 # Routes
 @app.route('/')
@@ -238,7 +239,7 @@ def login():
                 return render_template('login.html')
             
             login_user(user)
-            return redirect(url_for('trips'))
+            return redirect(url_for('shipping' if user.role == 'shipping' else 'trips'))
         else:
             flash('Invalid username or password')
     
@@ -977,7 +978,6 @@ def get_error_logs():
         with open(log_file, 'r') as f:
             # Read last 50 lines and parse JSON
             lines = f.readlines()
-            recent_lines = lines[-50:]  # Last 50 lines
             
             for line in lines[-20:]:  # Last 20 lines for display
                 line = line.strip()
@@ -1172,97 +1172,6 @@ def get_order_details(order_id):
     except Exception as e:
         logger.error(f"Exception in get_order_details: {str(e)}", exc_info=True)
         return jsonify({'error': 'Failed to fetch order details'}), 500
-
-
-@app.route('/api/cache/clear', methods=['POST'])
-@login_required
-def clear_cache():
-    """Clear in-memory cache (LeafTrade order details). Next Load Orders will re-fetch from APIs."""
-    try:
-        from utils.cache import clear as cache_clear
-        cache_clear()
-        logger = logging.getLogger('app.api.cache')
-        logger.info("In-memory cache cleared")
-        return jsonify({'ok': True, 'message': 'Cache cleared. Next Load Orders will fetch fresh data.'})
-    except Exception as e:
-        logger = logging.getLogger('app.api.cache')
-        logger.error(f"Cache clear failed: {e}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/orders/weight-debug')
-@login_required
-def orders_weight_debug():
-    """
-    Debug one order's usable weight: line items, batch_ref, BioTrack match, med_usableweight.
-    Query: order_id (optional; uses first order from approved list if omitted).
-    """
-    logger = logging.getLogger('app.api.orders_weight_debug')
-    try:
-        from api.leaftrade import get_orders as leaftrade_get_orders, get_order_details as leaftrade_get_order_details
-        from api.biotrack import get_auth_token, get_inventory_info
-
-        order_id = request.args.get('order_id')
-        if not order_id:
-            orders_data = leaftrade_get_orders(status='approved')
-            if not orders_data or not isinstance(orders_data, dict):
-                return jsonify({'error': 'No orders', 'hint': 'Supply ?order_id=1201174'}), 400
-            order_id = next(iter(orders_data))
-
-        token = get_auth_token()
-        inventory_data = get_inventory_info(token) if token else None
-        if not inventory_data:
-            return jsonify({
-                'order_id': order_id,
-                'error': 'No BioTrack inventory',
-                'hint': 'Check BioTrack auth and sync_inventory'
-            }), 200
-
-        inv_by_id = {str(iid).strip(): it for iid, it in inventory_data.items()}
-        details = leaftrade_get_order_details(order_id)
-        if not details:
-            return jsonify({'order_id': order_id, 'error': 'No order details from LeafTrade'}), 200
-
-        line_items = details.get('line_items', [])
-        breakdown = []
-        order_total = 0.0
-        sample_biotrack_ids = list(inv_by_id.keys())[:3]
-
-        for li in line_items:
-            batch_ref = li.get('barcode_id') or ''
-            batch_ref = str(batch_ref).replace(' ', '').strip()
-            units = int(li.get('quantity') or 0)
-            inv_item = inv_by_id.get(batch_ref)
-            if not inv_item and batch_ref.isdigit():
-                inv_item = inventory_data.get(int(batch_ref))
-            matched = inv_item is not None
-            med = 0.0
-            if inv_item:
-                med_val = inv_item.get('med_usableweight') or inv_item.get('med_usable_weight')
-                try:
-                    med = float(med_val) if med_val not in (None, '') else 0.0
-                except (TypeError, ValueError):
-                    pass
-            contribution = round(units * med, 2)
-            order_total += contribution
-            breakdown.append({
-                'batch_ref': batch_ref,
-                'units': units,
-                'matched_in_biotrack': matched,
-                'med_usableweight': med,
-                'contribution_g': contribution,
-            })
-
-        return jsonify({
-            'order_id': order_id,
-            'order_total_g': round(order_total, 2),
-            'line_items_breakdown': breakdown,
-            'sample_biotrack_ids': sample_biotrack_ids,
-            'hint': 'batch_ref must equal one of BioTrack inventory id to get non-zero weight.',
-        })
-    except Exception as e:
-        logger.error(f"weight-debug failed: {e}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/trips')
@@ -1524,31 +1433,6 @@ def refresh_vehicles():
     except Exception as e:
         logger.error(f"Exception in refresh_vehicles: {str(e)}", exc_info=True)
         return jsonify({'error': 'Failed to refresh vehicles from BioTrack'}), 500
-
-@app.route('/api/locations')
-@login_required
-def get_locations():
-    """API endpoint to get location mappings"""
-    try:
-        # Get all active location mappings
-        mappings = db.session.query(LocationMapping).filter_by(is_active=True).all()
-        
-        locations = []
-        for mapping in mappings:
-            locations.append({
-                'id': mapping.id,
-                'leaftrade_location_id': mapping.leaftrade_location_id,
-                'biotrack_vendor_id': mapping.biotrack_vendor_id,
-                'default_biotrack_room_id': mapping.default_biotrack_room_id,
-                'location_name': mapping.location_name,
-                'vendor_name': mapping.vendor_name,
-                'room_name': mapping.room_name
-            })
-        
-        return jsonify({'locations': locations})
-        
-    except Exception as e:
-        return jsonify({'error': f'Error fetching locations: {str(e)}'}), 500
 
 @app.route('/api/rooms')
 @login_required
@@ -2909,102 +2793,6 @@ def delete_email_contact(contact_id):
 
 
 # Global Preferences API endpoints
-@app.route('/api/global-preferences')
-@login_required
-def get_global_preferences():
-    """Get all global preferences"""
-    try:
-        preferences = GlobalPreference.query.all()
-        # The Azure client secret is excluded - it is only ever read server-side
-        preferences_dict = {
-            pref.preference_key: pref.preference_value
-            for pref in preferences if pref.preference_key != AZURE_SECRET_KEY
-        }
-        return jsonify({'success': True, 'preferences': preferences_dict})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/global-preferences/<preference_key>')
-@login_required
-def get_global_preference(preference_key):
-    """Get specific global preference"""
-    try:
-        preference = GlobalPreference.query.filter_by(preference_key=preference_key).first()
-        if not preference:
-            return jsonify({'error': 'Preference not found'}), 404
-        return jsonify({'success': True, 'preference_key': preference.preference_key, 'preference_value': preference.preference_value})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/global-preferences', methods=['POST'])
-@login_required
-def create_global_preference():
-    """Create new global preference"""
-    try:
-        data = request.get_json()
-        preference_key = data.get('preference_key')
-        preference_value = data.get('preference_value')
-        
-        if not preference_key or preference_value is None:
-            return jsonify({'error': 'preference_key and preference_value are required'}), 400
-        
-        # Check if preference already exists
-        existing = GlobalPreference.query.filter_by(preference_key=preference_key).first()
-        if existing:
-            return jsonify({'error': 'Preference already exists'}), 400
-        
-        preference = GlobalPreference(
-            preference_key=preference_key,
-            preference_value=preference_value
-        )
-        db.session.add(preference)
-        db.session.commit()
-        
-        return jsonify({'success': True, 'message': 'Preference created successfully'})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/global-preferences/<preference_key>', methods=['PUT'])
-@login_required
-def update_global_preference(preference_key):
-    """Update existing global preference"""
-    try:
-        data = request.get_json()
-        preference_value = data.get('preference_value')
-        
-        if preference_value is None:
-            return jsonify({'error': 'preference_value is required'}), 400
-        
-        preference = GlobalPreference.query.filter_by(preference_key=preference_key).first()
-        if not preference:
-            return jsonify({'error': 'Preference not found'}), 404
-        
-        preference.preference_value = preference_value
-        db.session.commit()
-        
-        return jsonify({'success': True, 'message': 'Preference updated successfully'})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/global-preferences/<preference_key>', methods=['DELETE'])
-@login_required
-def delete_global_preference(preference_key):
-    """Delete global preference"""
-    try:
-        preference = GlobalPreference.query.filter_by(preference_key=preference_key).first()
-        if not preference:
-            return jsonify({'error': 'Preference not found'}), 404
-        
-        db.session.delete(preference)
-        db.session.commit()
-        
-        return jsonify({'success': True, 'message': 'Preference deleted successfully'})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
-
 # Room Selection Management API endpoints
 @app.route('/api/global-preferences/rooms')
 @login_required
@@ -3051,22 +2839,6 @@ def save_selected_rooms():
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
-
-@app.route('/api/global-preferences/rooms', methods=['DELETE'])
-@login_required
-def clear_selected_rooms():
-    """Clear selected rooms for finished goods report"""
-    try:
-        preference = GlobalPreference.query.filter_by(preference_key='finished_goods_rooms').first()
-        if preference:
-            db.session.delete(preference)
-            db.session.commit()
-        
-        return jsonify({'success': True, 'message': 'Room selections cleared successfully'})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
-
 
 # Simplified Report Generation Endpoints
 @app.route('/api/inventory-report/generate-simple', methods=['POST'])
@@ -3189,157 +2961,6 @@ def download_finished_goods_report_simple():
         logger.error(f"Error downloading finished goods report: {str(e)}")
         return jsonify({'error': f'Failed to download finished goods report: {str(e)}'}), 500
 
-@app.route('/api/test-qa-check/<barcode_id>')
-@login_required
-def test_qa_check(barcode_id):
-    """Test endpoint to verify get_inventory_qa_check method"""
-    logger = logging.getLogger('app.test_qa_check')
-    logger.info(f"Testing QA check for barcode: {barcode_id}")
-    
-    try:
-        from api.biotrack import get_auth_token, get_inventory_qa_check
-        
-        # Authenticate with BioTrack
-        token = get_auth_token()
-        if not token:
-            logger.error("Failed to authenticate with BioTrack API")
-            return jsonify({'error': 'Failed to authenticate with BioTrack API'}), 500
-        
-        # Test QA check
-        logger.debug(f"Calling BioTrack API to check QA for barcode: {barcode_id}")
-        lab_results = get_inventory_qa_check(token, barcode_id)
-        
-        if lab_results:
-            logger.info(f"QA check successful for barcode {barcode_id}: {lab_results}")
-            return jsonify({
-                'success': True,
-                'barcode_id': barcode_id,
-                'lab_results': lab_results
-            })
-        else:
-            logger.info(f"No lab data found for barcode {barcode_id}")
-            return jsonify({
-                'success': True,
-                'barcode_id': barcode_id,
-                'lab_results': None,
-                'message': 'No lab data available for this barcode'
-            })
-        
-    except Exception as e:
-        logger.error(f"Error testing QA check: {str(e)}")
-        return jsonify({'error': f'Error testing QA check: {str(e)}'}), 500
-
-@app.route('/api/finished-goods-report/test')
-@login_required
-def test_finished_goods_report():
-    """Test endpoint to debug finished goods report without CSV generation"""
-    logger = logging.getLogger('app.finished_goods_report_test')
-    logger.info("Testing finished goods report data retrieval")
-    
-    try:
-        from api.biotrack import get_auth_token, get_inventory_info, get_room_info, get_inventory_qa_check
-        import time
-        
-        # Authenticate with BioTrack
-        logger.debug("Attempting to authenticate with BioTrack")
-        token = get_auth_token()
-        if not token:
-            logger.error("Failed to authenticate with BioTrack API")
-            return jsonify({'error': 'Failed to authenticate with BioTrack API'}), 500
-        
-        logger.debug("Successfully authenticated with BioTrack")
-        
-        # Get inventory data
-        logger.debug("Calling BioTrack API to fetch inventory")
-        inventory_data = get_inventory_info(token)
-        if not inventory_data:
-            logger.error("Failed to retrieve inventory data from BioTrack")
-            return jsonify({'error': 'Failed to retrieve inventory data'}), 500
-        
-        logger.info(f"Retrieved {len(inventory_data)} inventory items from BioTrack")
-        
-        # Get room data for room name lookup
-        logger.debug("Calling BioTrack API to fetch rooms")
-        room_data = get_room_info(token)
-        room_lookup = {}
-        if room_data:
-            room_lookup = {room_id: room_info['name'] for room_id, room_info in room_data.items()}
-        
-        # Get selected rooms from preferences
-        selected_rooms = []
-        preference = GlobalPreference.query.filter_by(preference_key='finished_goods_rooms').first()
-        if preference:
-            selected_rooms = [room_id.strip() for room_id in preference.preference_value.split(',') if room_id.strip()]
-        
-        # Define finished goods inventory types
-        finished_goods_types = [22, 23, 24, 25, 28, 34, 35, 36, 37, 38, 39, 45]
-        
-        # Pre-filter items to reduce processing time
-        logger.debug("Pre-filtering inventory items")
-        pre_filtered_items = []
-        for item_id, item_info in inventory_data.items():
-            # Filter by selected rooms
-            current_room_id = str(item_info.get('currentroom', ''))
-            if selected_rooms and current_room_id not in selected_rooms:
-                continue
-            
-            # Filter by inventory type
-            inventory_type = item_info.get('inventorytype')
-            if inventory_type not in finished_goods_types:
-                continue
-            
-            pre_filtered_items.append((item_id, item_info))
-        
-        logger.info(f"Pre-filtered to {len(pre_filtered_items)} items matching room and type criteria")
-        
-        # Test a few items for lab data
-        test_items = []
-        start_time = time.time()
-        
-        for i, (item_id, item_info) in enumerate(pre_filtered_items[:10]):  # Test first 10 items
-            try:
-                barcode_id = str(item_info.get('barcode_id') or item_info.get('barcode') or item_id)
-                lab_results = None
-                
-                if barcode_id:
-                    try:
-                        lab_results = get_inventory_qa_check(token, barcode_id)
-                    except Exception as e:
-                        logger.warning(f"Error getting lab data for barcode {barcode_id}: {str(e)}")
-                        lab_results = None
-                
-                test_items.append({
-                    'item_id': str(item_id),
-                    'product_name': item_info.get('productname', 'Unknown Product'),
-                    'inventory_type': item_info.get('inventorytype'),
-                    'current_room': str(item_info.get('currentroom', '')),
-                    'barcode_id': barcode_id,
-                    'has_lab_data': lab_results is not None,
-                    'lab_results': lab_results
-                })
-                
-            except Exception as e:
-                logger.warning(f"Error processing test item {item_id}: {str(e)}")
-                continue
-        
-        total_time = time.time() - start_time
-        
-        return jsonify({
-            'success': True,
-            'total_inventory_items': len(inventory_data),
-            'pre_filtered_items': len(pre_filtered_items),
-            'selected_rooms': selected_rooms,
-            'test_items_processed': len(test_items),
-            'test_items': test_items,
-            'processing_time_seconds': round(total_time, 2),
-            'message': 'Test completed successfully'
-        })
-        
-    except Exception as e:
-        logger.error(f"Error testing finished goods report: {str(e)}")
-        return jsonify({'error': f'Failed to test finished goods report: {str(e)}'}), 500
-
-
 @app.route('/adjustments')
 @login_required
 def adjustments():
@@ -3437,6 +3058,77 @@ def submit_adjustments():
 def help():
     """Help and user guide page"""
     return render_template('help.html')
+
+def _approved_orders_for(delivery_date):
+    """Approved LeafTrade orders delivering on a YYYY-MM-DD date, sorted by customer."""
+    datetime.strptime(delivery_date, '%Y-%m-%d')
+    from api.leaftrade import get_orders
+    orders = get_orders("approved")
+    if orders is None:
+        raise Exception("Failed to fetch orders from LeafTrade")
+    return sorted((o for o in orders.values() if o['delivery_date'] == delivery_date),
+                  key=lambda o: o['customer_name'].lower())
+
+@app.route('/shipping')
+@login_required
+def shipping():
+    """Pick lists and fulfillment summary for a delivery date."""
+    delivery_date = request.args.get('date') or (get_est_now() + timedelta(days=1)).strftime('%Y-%m-%d')
+    orders, error = [], None
+    try:
+        orders = _approved_orders_for(delivery_date)
+    except Exception as e:
+        logging.getLogger('app.shipping').error(f"Failed to load shipping orders for {delivery_date}: {str(e)}")
+        error = str(e)
+    return render_template('shipping.html', delivery_date=delivery_date, orders=orders, error=error)
+
+@app.route('/shipping/<int:order_id>.pdf')
+@login_required
+def shipping_pick_list(order_id):
+    """Pick list for one order."""
+    try:
+        from utils.pick_lists import build_pick_list_pdf
+        pdf = build_pick_list_pdf([order_id])
+    except Exception as e:
+        logging.getLogger('app.shipping_pick_list').error(f"Failed to build pick list for order {order_id}: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 400
+    return Response(pdf, mimetype='application/pdf', headers={
+        'Content-Disposition': f'attachment; filename=pick_list_{order_id}.pdf'
+    })
+
+@app.route('/shipping/<delivery_date>/pick-lists.pdf')
+@login_required
+def shipping_pick_lists(delivery_date):
+    """Pick lists for every approved order on a delivery date."""
+    try:
+        from utils.pick_lists import build_pick_list_pdf
+        orders = _approved_orders_for(delivery_date)
+        if not orders:
+            return jsonify({'error': f'No approved orders for {delivery_date}'}), 404
+        pdf = build_pick_list_pdf([o['order_id'] for o in orders])
+    except Exception as e:
+        logging.getLogger('app.shipping_pick_lists').error(f"Failed to build pick lists for {delivery_date}: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 400
+    return Response(pdf, mimetype='application/pdf', headers={
+        'Content-Disposition': f'attachment; filename=pick_lists_{delivery_date}.pdf'
+    })
+
+@app.route('/shipping/<delivery_date>/summary.xlsx')
+@login_required
+def shipping_summary(delivery_date):
+    """Fulfillment summary spreadsheet for every approved order on a delivery date."""
+    try:
+        from utils.pick_lists import build_summary_xlsx
+        orders = _approved_orders_for(delivery_date)
+        if not orders:
+            return jsonify({'error': f'No approved orders for {delivery_date}'}), 404
+        xlsx = build_summary_xlsx([o['order_id'] for o in orders], delivery_date)
+    except Exception as e:
+        logging.getLogger('app.shipping_summary').error(f"Failed to build fulfillment summary for {delivery_date}: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 400
+    return Response(xlsx, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={
+        'Content-Disposition': f'attachment; filename=orders_fulfillment_{delivery_date}.xlsx'
+    })
 
 @app.route('/robots.txt')
 def robots_txt():

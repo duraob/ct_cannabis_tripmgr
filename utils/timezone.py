@@ -2,14 +2,11 @@
 Timezone utility functions for US Eastern Standard Time (EST) with DST handling
 """
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 import zoneinfo
 
 # US Eastern timezone with automatic DST handling
 US_EASTERN_TZ = zoneinfo.ZoneInfo("America/New_York")
-
-# Legacy US Eastern Standard Time (UTC-5) - kept for backward compatibility
-US_EASTERN = timezone(timedelta(hours=-5))
 
 def get_est_now():
     """Get current time in EST/EDT with DST handling"""
@@ -20,18 +17,6 @@ def convert_utc_to_est(utc_dt):
     if utc_dt.tzinfo is None:
         utc_dt = utc_dt.replace(tzinfo=timezone.utc)
     return utc_dt.astimezone(US_EASTERN_TZ)
-
-def convert_est_to_utc(est_dt):
-    """Convert EST/EDT datetime to UTC with DST handling"""
-    if est_dt.tzinfo is None:
-        est_dt = est_dt.replace(tzinfo=US_EASTERN_TZ)
-    return est_dt.astimezone(timezone.utc)
-
-def format_est_datetime(dt, format_str='%Y-%m-%d %H:%M:%S'):
-    """Format datetime in EST/EDT with DST handling"""
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=US_EASTERN_TZ)
-    return dt.strftime(format_str)
 
 def create_est_datetime_with_dst(date_obj, time_str):
     """
