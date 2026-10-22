@@ -82,7 +82,7 @@ def _pick_list(order):
         ('LEFTPADDING', (0, 0), (-1, -1), 0),
     ]))
 
-    rows = [[Paragraph(label, _LABEL) for label in ('PRODUCT', 'BATCH #', 'PACKAGE ID', 'UNIT SIZE', 'QTY')]]
+    rows = [[Paragraph(label, _LABEL) for label in ('PRODUCT', 'BATCH #', 'PACKAGE ID', 'UNIT SIZE', 'CASES', 'UNITS')]]
     for item in _by_product(order.get('items', [])):
         rows.append([
             Paragraph(_text(item.get('product_name')), _VALUE),
@@ -90,8 +90,9 @@ def _pick_list(order):
             Paragraph(_text(item.get('pull_number')), _VALUE),
             Paragraph(_text(_unit_size(item)), _VALUE),
             Paragraph(_text(item.get('quantity')), _VALUE),
+            Paragraph(_text(item.get('units')), _VALUE),
         ])
-    items = Table(rows, colWidths=[3.5 * inch, 1.6 * inch, 1.1 * inch, 0.8 * inch, 0.5 * inch], repeatRows=1)
+    items = Table(rows, colWidths=[3.2 * inch, 1.5 * inch, 1.1 * inch, 0.7 * inch, 0.5 * inch, 0.5 * inch], repeatRows=1)
     items.setStyle(TableStyle([
         ('LINEBELOW', (0, 0), (-1, -1), 0.5, GRID),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
