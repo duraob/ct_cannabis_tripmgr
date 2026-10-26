@@ -29,6 +29,7 @@ _TITLE = ParagraphStyle('title', fontName='Helvetica-Bold', fontSize=14, leading
 _CUSTOMER = ParagraphStyle('customer', fontName='Helvetica-Bold', fontSize=11, leading=14)
 _LABEL = ParagraphStyle('label', fontName='Helvetica-Bold', fontSize=7, leading=9, textColor=colors.HexColor('#555555'))
 _VALUE = ParagraphStyle('value', fontName='Helvetica', fontSize=9, leading=11)
+_PRODUCT = ParagraphStyle('product', parent=_VALUE, fontName='Helvetica-Bold')
 
 GRID = colors.HexColor('#BBBBBB')
 
@@ -85,7 +86,7 @@ def _pick_list(order):
     rows = [[Paragraph(label, _LABEL) for label in ('PRODUCT', 'BATCH #', 'PACKAGE ID', 'UNIT SIZE', 'CASES', 'UNITS')]]
     for item in _by_product(order.get('items', [])):
         rows.append([
-            Paragraph(_text(item.get('product_name')), _VALUE),
+            Paragraph(_text(item.get('product_name')), _PRODUCT),
             Paragraph(_text(item.get('batch_number_override') or item.get('batch_ref')), _VALUE),
             Paragraph(_text(item.get('pull_number')), _VALUE),
             Paragraph(_text(_unit_size(item)), _VALUE),
