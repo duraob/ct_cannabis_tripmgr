@@ -182,6 +182,7 @@ def build_summary_xlsx(order_ids, delivery_date):
         fill = PatternFill('solid', fgColor=PULL_FILLS[color_index % len(PULL_FILLS)])
         for cell in ws[ws.max_row]:
             cell.fill = fill
+        ws.cell(ws.max_row, 3).font = Font(bold=True)
 
     for column, width in zip('ABCDEFGH', [22, 20, 80, 14, 10, 8, 10, 14]):
         ws.column_dimensions[column].width = width
