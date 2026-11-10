@@ -5,6 +5,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import json
 import logging
+import re
 import time
 from datetime import datetime, UTC, timezone, timedelta
 from utils.timezone import get_est_now, get_est_now_naive
@@ -639,6 +640,26 @@ def validate_trip_data_backend(data):
         'vehicle': vehicle
     }
 
+def manifest_precheck_errors(trip, driver1, driver2):
+    """Rules BioTrack enforces on manifests, checked before any inventory moves.
+
+    BioTrack only rejects these at the manifest step, after sublots are already
+    created and moved, which leaves the trip in a state it cannot recover from.
+    """
+    errors = []
+    if driver1.biotrack_id == driver2.biotrack_id:
+        errors.append(f"Driver 1 and Driver 2 are both {driver1.name}. "
+                      f"Choose two different drivers.")
+
+    departure = trip.approximate_start_time or datetime.combine(
+        trip.delivery_date, datetime.min.time().replace(hour=8))
+    earliest = get_est_now_naive() + timedelta(hours=24)
+    if departure < earliest:
+        errors.append(f"This trip departs {departure.strftime('%b %d at %I:%M %p')}. "
+                      f"BioTrack needs manifests at least 24 hours before departure. "
+                      f"Create a new trip that departs after {earliest.strftime('%b %d at %I:%M %p')}.")
+    return errors
+
 @app.route('/trips/<int:trip_id>/execute', methods=['POST'])
 @login_required
 def execute_trip(trip_id):
@@ -667,7 +688,11 @@ def execute_trip(trip_id):
         
         if not driver1 or not driver2 or not vehicle:
             return jsonify({'error': 'Driver or vehicle information not found'}), 400
-        
+
+        precheck_errors = manifest_precheck_errors(trip, driver1, driver2)
+        if precheck_errors:
+            return jsonify({'error': ' '.join(precheck_errors)}), 400
+
         # Get or create TripExecution record
         from models import TripExecution
         execution = db.session.query(TripExecution).filter_by(trip_id=trip_id).first()
@@ -750,6 +775,10 @@ def get_trip_execution_status(trip_id):
             'execution_status': execution.status,
             'progress_percentage': progress_percentage,
             'progress_message': execution.progress_message,
+            'failed_stops': [
+                {'order_id': to.order_id, 'error': to.error_message}
+                for to in sorted(trip.trip_orders, key=lambda to: to.sequence_order) if to.error_message
+            ],
             'created_at': execution.created_at.isoformat() if execution.created_at else None,
             'updated_at': execution.updated_at.isoformat() if execution.updated_at else None,
             'completed_at': execution.completed_at.isoformat() if execution.completed_at else None
@@ -809,7 +838,7 @@ def trip_stop_manifest_pdf(trip_id, trip_order_id):
         pdf = build_manifest_pdf(trip_order.id)
     except Exception as e:
         logger.error(f"Failed to build manifest PDF for trip order {trip_order_id}: {str(e)}", exc_info=True)
-        return jsonify({'error': str(e)}), 400
+        return Response(str(e), status=400, mimetype='text/plain')
 
     return Response(pdf, mimetype='application/pdf', headers={
         'Content-Disposition': f'inline; filename=manifest_{trip_order.manifest_id}.pdf'
@@ -2437,7 +2466,15 @@ def validate_trip(trip_id):
                 'errors': ['Driver or vehicle information not found'],
                 'summary': 'Trip cannot be validated - missing driver or vehicle information'
             }
-        
+
+        precheck_errors = manifest_precheck_errors(trip, driver1, driver2)
+        if precheck_errors:
+            return {
+                'valid': False,
+                'errors': precheck_errors,
+                'summary': 'Trip cannot be validated - BioTrack would reject the manifest'
+            }
+
         # Initialize BioTrack API for authentication check
         from api.biotrack import get_auth_token
         from api.leaftrade import get_order_details
@@ -2761,6 +2798,9 @@ def create_email_contact():
         email = (data.get('email') or '').strip()
         if not email:
             return jsonify({'error': 'Email is required'}), 400
+        if not re.fullmatch(r'[^@\s"<>,;]+@[^@\s"<>,;]+\.[^@\s"<>,;]+', email):
+            return jsonify({'error': f"'{email}' is not a valid email address. "
+                                     f"Enter only the address, like name@store.com."}), 400
 
         contact = EmailContact(
             location_mapping_id=data.get('mapping_id'),

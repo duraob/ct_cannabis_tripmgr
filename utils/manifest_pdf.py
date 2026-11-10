@@ -287,7 +287,8 @@ def build_manifest_pdf(trip_order_id):
 
     vendor = trip_order.vendor
     if not vendor:
-        raise Exception(f"Trip order {trip_order_id} has no destination vendor")
+        raise Exception("This stop is not linked to a dispensary, so its manifest cannot be built. "
+                        "Add a location mapping for this dispensary on the Mapping page.")
 
     mapping = trip_order.location_mapping
     phone = mapping.customer.phone if mapping and mapping.customer else ''

@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 
 from sqlalchemy.exc import IntegrityError
-from models import db, Trip, TripOrder, TripOrderItem, Driver, Vehicle, TripExecution
+from models import db, Trip, TripOrder, TripOrderItem, Driver, Vehicle, Vendor, TripExecution
 from utils.timezone import get_est_now_naive
 
 logger = logging.getLogger('utils.trip_execution')
@@ -97,7 +97,10 @@ def execute_trip_background_job(trip_id):
                     approx_start_time = f"{delivery_date} 08:00 AM"
                 
                 route_segments = googlemaps_client.generate_route_segments(addresses, delivery_date, approx_start_time)
-                
+                if not route_segments:
+                    raise Exception("Google Maps could not plan a route for this trip, so no inventory was moved. "
+                                    "Check each stop's address, then run the trip again.")
+
                 # Save route data to trip
                 trip.route_data = json.dumps(route_segments)
                 db.session.commit()
@@ -381,7 +384,13 @@ def _process_order_manifest(trip_order, order_details, token, driver1, driver2, 
                 room_id = trip_order.room_override
             if location_mapping and location_mapping.biotrack_vendor_id:
                 vendor_license = location_mapping.biotrack_vendor_id
-        
+                # Trip creation links the stop only if the mapping existed then;
+                # the manifest PDF and email need this link.
+                vendor = db.session.query(Vendor).filter_by(biotrack_vendor_id=vendor_license).first()
+                if vendor:
+                    trip_order.vendor_id = vendor.id
+                trip_order.location_mapping_id = location_mapping.id
+
         # Move sublots to room (original working pattern)
         logger.info(f"Moving sublots to room for order {trip_order.order_id}")
         move_data = []
@@ -426,22 +435,30 @@ def _process_order_manifest(trip_order, order_details, token, driver1, driver2, 
         }
         
         from api.biotrack import post_manifest
-        manifest_result = post_manifest(
-            token,
-            manifest_data,
-            [driver1.biotrack_id, driver2.biotrack_id],
-            vehicle.biotrack_id
-        )
-        
+        try:
+            manifest_result = post_manifest(
+                token,
+                manifest_data,
+                [driver1.biotrack_id, driver2.biotrack_id],
+                vehicle.biotrack_id
+            )
+            reason = 'BioTrack did not return a manifest.'
+        except Exception as e:
+            manifest_result = None
+            reason = str(e)
+
         if not manifest_result:
-            error_msg = f"Failed to create manifest for order {trip_order.order_id}"
-            logger.error(f"Manifest creation failed: {error_msg}")
+            error_msg = (f"BioTrack rejected the manifest: {reason} "
+                         f"The inventory was already moved to the destination room. "
+                         f"Do not run this trip again, or BioTrack will get duplicate sublots. "
+                         f"Create this manifest directly in BioTrack.")
+            logger.error(f"Manifest creation failed for order {trip_order.order_id}: {reason}")
             trip_order.error_message = error_msg
             db.session.commit()
             return {
                 'order_id': trip_order.order_id,
                 'status': 'failed',
-                'error': 'Failed to create manifest'
+                'error': error_msg
             }
         
         # Store manifest ID in database (following reference implementation)

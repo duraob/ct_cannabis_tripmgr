@@ -873,7 +873,8 @@ def post_manifest(
         location: Location (license) ID; if not provided, uses BIOTRACK_DEFAULT_LOCATION from env
     
     Returns:
-        Response data or None if failed
+        Manifest barcode ID, or None for invalid input. Raises with BioTrack's
+        error message when BioTrack rejects the manifest.
     """
     if not validate_token(token):
         return None
@@ -917,19 +918,14 @@ def post_manifest(
         "training": training
     }
     
-    try:
-        response_data = _make_api_request(data, "manifest_creation")
-        
-        if response_data and str(response_data.get("success")) == "1":
-            logger.info("Successfully created inventory manifest")
-            return response_data.get("barcode_id")
-        else:
-            logger.error(f"Manifest creation failed: {response_data}")
-            return None
-            
-    except Exception as e:
-        logger.error(f"Failed to post manifest: {e}")
-        return None
+    response_data = _make_api_request(data, "manifest_creation")
+
+    if response_data and str(response_data.get("success")) == "1":
+        logger.info("Successfully created inventory manifest")
+        return response_data.get("barcode_id")
+
+    logger.error(f"Manifest creation failed: {response_data}")
+    raise Exception((response_data or {}).get("error") or "BioTrack did not respond")
 
 
 def post_inventory_adjust(

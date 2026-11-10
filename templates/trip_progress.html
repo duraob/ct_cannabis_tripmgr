@@ -9,6 +9,7 @@
                 <div class="animate-spin rounded-full h-20 w-20 border-b-4 border-blue-600 mx-auto mb-6" id="progress-spinner"></div>
                 <h1 class="text-3xl font-bold text-gray-900 mb-4">Processing Trip Execution</h1>
                 <p class="text-xl text-gray-600 mb-6" id="current-status">Starting trip execution...</p>
+                <ul id="failed-stops" class="hidden text-left space-y-3 mb-6"></ul>
             </div>
             
             <!-- Progress Bar -->
@@ -136,12 +137,26 @@ document.addEventListener('DOMContentLoaded', function() {
         spinner.classList.add('text-red-500');
         spinner.innerHTML = '✗';
         
-        document.getElementById('current-status').textContent = 'Trip execution failed. Please try again.';
-        
-        // Show error details if available
-        if (data.progress_message) {
-            document.getElementById('current-status').textContent += ` Error: ${data.progress_message}`;
+        const failedStops = data.failed_stops || [];
+        if (failedStops.length === 0) {
+            document.getElementById('current-status').textContent = data.progress_message || 'Trip execution failed.';
+            return;
         }
+
+        document.getElementById('current-status').textContent = 'Trip execution failed. Review each stop below.';
+        const list = document.getElementById('failed-stops');
+        failedStops.forEach(stop => {
+            const item = document.createElement('li');
+            item.className = 'p-4 bg-red-50 border border-red-200 rounded-md text-red-700';
+            const title = document.createElement('p');
+            title.className = 'font-semibold';
+            title.textContent = `Order ${stop.order_id}`;
+            const message = document.createElement('p');
+            message.textContent = stop.error;
+            item.append(title, message);
+            list.appendChild(item);
+        });
+        list.classList.remove('hidden');
     }
 });
 </script>

@@ -8,6 +8,7 @@ template can carry formatting and links.
 
 import base64
 import logging
+import re
 
 import msal
 import requests
@@ -225,7 +226,12 @@ def send_manifest_email(trip_order_id, subject, body_html, to_addresses, cc_addr
 
     if response.status_code != 202:
         logger.error(f"Graph sendMail failed ({response.status_code}): {response.text}")
-        raise Exception(f"Microsoft Graph rejected the message ({response.status_code}): {response.text}")
+        bad_address = re.search(r"Recipient '(.+?)' is not resolved", response.text)
+        if bad_address:
+            raise Exception(f"'{bad_address.group(1).replace(chr(92), '')}' is not a valid email address. Fix it on the Mapping page "
+                            f"(or the Config page for internal CC contacts), then send again.")
+        raise Exception(f"Microsoft could not send the email (error {response.status_code}). "
+                        f"Try again in a few minutes.")
 
     logger.info(
         f"Manifest email sent for trip order {trip_order_id}",
