@@ -3,7 +3,9 @@ Fulfillment documents for the shipping role, built from LeafTrade order details.
 
   - pick list PDF   -> one page per order, modelled on the LeafTrade packing slip
   - summary XLSX    -> every line item for a delivery date, sorted by product and
-                       highlighted per pull number, with total units per pull number
+                       highlighted per pull number, with total cases per pull number;
+                       lines whose case size differs from the category's standard
+                       (set on the Config page) are flagged in red
 
 Prices and other finance fields never leave this module: only the fields below are read.
 LeafTrade's `quantity` is the case count and `units` is the total unit count.
@@ -35,9 +37,10 @@ GRID = colors.HexColor('#BBBBBB')
 
 # Cycled per pull number in sort order, so neighbouring groups always differ.
 PULL_FILLS = ['FFFF99', 'FFCC99', 'C6EFCE', 'BDD7EE', 'E4C1F9', 'FFC7CE', 'B4E5E5', 'D9D9D9']
+OFF_SIZE = Font(bold=True, color='C00000')
 
 SUMMARY_HEADERS = ['customer', 'customer_location', 'product_name', 'pull_number',
-                   'quantity', 'cases', 'Total', 'Need Labeled']
+                   'units', 'cases', 'Total Cases', 'Need Labeled']
 
 
 def _order(order_id):
@@ -146,7 +149,13 @@ def build_pick_list_pdf(order_ids):
     return buffer.getvalue()
 
 
-def build_summary_xlsx(order_ids, delivery_date):
+def _is_off_size(item, case_sizes):
+    """True when the item's case size differs from its category's standard. case_sizes is keyed by lowercase category."""
+    standard = next((case_sizes[c.lower()] for c in item.get('categories') or [] if c.lower() in case_sizes), None)
+    return standard is not None and item.get('case_size') != standard
+
+
+def build_summary_xlsx(order_ids, delivery_date, case_sizes):
     """Every line item for the orders, alphabetized by product and highlighted per pull number."""
     rows = []
     for order_id in order_ids:
@@ -160,6 +169,7 @@ def build_summary_xlsx(order_ids, delivery_date):
                 item.get('pull_number') or '',
                 item.get('units') or 0,
                 item.get('quantity') or 0,
+                _is_off_size(item, case_sizes),
             ])
     rows.sort(key=lambda row: (row[2].lower(), row[3], row[0].lower(), row[1].lower()))
 
@@ -172,19 +182,22 @@ def build_summary_xlsx(order_ids, delivery_date):
 
     color_index = -1
     for i, row in enumerate(rows):
+        *values, off_size = row
         if i == 0 or row[3] != rows[i - 1][3]:
             color_index += 1
-            group_units = 0
-        group_units += row[4]
-        # Total units for the pull number sits on the last row of its group.
+            group_cases = 0
+        group_cases += row[5]
+        # Total cases for the pull number sits on the last row of its group.
         is_last = i == len(rows) - 1 or rows[i + 1][3] != row[3]
-        ws.append(row + [group_units if is_last else None, None])
+        ws.append(values + [group_cases if is_last else None, None])
         fill = PatternFill('solid', fgColor=PULL_FILLS[color_index % len(PULL_FILLS)])
         for cell in ws[ws.max_row]:
             cell.fill = fill
-        ws.cell(ws.max_row, 3).font = Font(bold=True)
+        ws.cell(ws.max_row, 3).font = OFF_SIZE if off_size else Font(bold=True)
+        if off_size:
+            ws.cell(ws.max_row, 6).font = OFF_SIZE
 
-    for column, width in zip('ABCDEFGH', [22, 20, 80, 14, 10, 8, 10, 14]):
+    for column, width in zip('ABCDEFGH', [22, 20, 80, 14, 10, 8, 12, 14]):
         ws.column_dimensions[column].width = width
     ws.freeze_panes = 'A2'
     ws.auto_filter.ref = ws.dimensions

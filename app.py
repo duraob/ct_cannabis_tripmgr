@@ -2832,6 +2832,34 @@ def delete_email_contact(contact_id):
         return jsonify({'error': str(e)}), 500
 
 
+CASE_SIZES_KEY = 'standard_case_sizes'
+
+
+@app.route('/api/case-sizes')
+@login_required
+def get_case_sizes():
+    """Standard case size per LeafTrade category, as {category: size}."""
+    return jsonify({'success': True, 'case_sizes': json.loads(get_preference(CASE_SIZES_KEY, '{}'))})
+
+
+@app.route('/api/case-sizes', methods=['POST'])
+@login_required
+def save_case_sizes():
+    """Replace the standard case size map. Sizes must be positive whole numbers."""
+    case_sizes = (request.get_json() or {}).get('case_sizes')
+    if not isinstance(case_sizes, dict) or not all(
+            isinstance(k, str) and k.strip() and isinstance(v, int) and v > 0 for k, v in case_sizes.items()):
+        return jsonify({'error': 'case_sizes must map category names to positive whole numbers'}), 400
+    try:
+        set_preference(CASE_SIZES_KEY, json.dumps({k.strip(): v for k, v in case_sizes.items()}))
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        logging.getLogger('app.save_case_sizes').error(f"Failed to save case sizes: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
 # Global Preferences API endpoints
 # Room Selection Management API endpoints
 @app.route('/api/global-preferences/rooms')
@@ -3162,7 +3190,8 @@ def shipping_summary(delivery_date):
         orders = _approved_orders_for(delivery_date)
         if not orders:
             return jsonify({'error': f'No approved orders for {delivery_date}'}), 404
-        xlsx = build_summary_xlsx([o['order_id'] for o in orders], delivery_date)
+        case_sizes = {k.lower(): v for k, v in json.loads(get_preference(CASE_SIZES_KEY, '{}')).items()}
+        xlsx = build_summary_xlsx([o['order_id'] for o in orders], delivery_date, case_sizes)
     except Exception as e:
         logging.getLogger('app.shipping_summary').error(f"Failed to build fulfillment summary for {delivery_date}: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 400

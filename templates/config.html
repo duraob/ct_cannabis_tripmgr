@@ -400,6 +400,22 @@
             </div>
         </div>
 
+        <!-- Standard Case Sizes -->
+        <div class="bg-white shadow rounded-lg mb-8">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h2 class="text-xl font-semibold text-gray-900">Standard Case Sizes</h2>
+                <p class="text-sm text-gray-600 mt-1">Lines on the shipping summary whose case size differs from their category's standard are flagged in red. Enter the category exactly as LeafTrade names it (e.g. Gummies).</p>
+            </div>
+            <div class="p-6">
+                <div class="flex flex-col sm:flex-row gap-2 mb-4">
+                    <input type="text" id="case-category" placeholder="Category" class="sm:w-56 px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                    <input type="number" id="case-size" min="1" step="1" placeholder="Units per case" class="sm:w-40 px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                    <button type="button" onclick="addCaseSize()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Add</button>
+                </div>
+                <div id="case-size-list" class="space-y-2"></div>
+            </div>
+        </div>
+
         <!-- Training Mode Status -->
         <div class="bg-white shadow rounded-lg mb-8">
             <div class="px-6 py-4 border-b border-gray-200">
@@ -1046,6 +1062,76 @@ function showToast(message, type) {
     setTimeout(() => {
         document.body.removeChild(toast);
     }, 3000);
+}
+
+// ---- Standard case sizes ----
+
+let caseSizes = {};
+
+document.addEventListener('DOMContentLoaded', loadCaseSizes);
+
+async function loadCaseSizes() {
+    const list = document.getElementById('case-size-list');
+    try {
+        const data = await (await fetch('/api/case-sizes')).json();
+        caseSizes = data.case_sizes || {};
+        renderCaseSizes();
+    } catch (error) {
+        list.innerHTML = '<p class="text-sm text-red-600">Could not load case sizes.</p>';
+    }
+}
+
+function renderCaseSizes() {
+    const list = document.getElementById('case-size-list');
+    const categories = Object.keys(caseSizes).sort();
+    if (categories.length === 0) {
+        list.innerHTML = '<p class="text-sm text-gray-500">No standard case sizes yet.</p>';
+        return;
+    }
+    list.innerHTML = categories.map(category => `
+        <div class="flex items-center justify-between bg-gray-50 px-3 py-2 rounded-md">
+            <span class="text-sm text-gray-800">${escapeHtml(category)}: ${caseSizes[category]} per case</span>
+            <button onclick="removeCaseSize(decodeURIComponent('${encodeURIComponent(category)}'))" class="text-sm text-red-600 hover:text-red-800">Remove</button>
+        </div>
+    `).join('');
+}
+
+async function saveCaseSizes(updated) {
+    const response = await fetch('/api/case-sizes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ case_sizes: updated })
+    });
+    const data = await response.json();
+    if (!data.success) {
+        showToast(data.error || 'Could not save case sizes', 'error');
+        return;
+    }
+    caseSizes = updated;
+    renderCaseSizes();
+}
+
+async function addCaseSize() {
+    const categoryInput = document.getElementById('case-category');
+    const sizeInput = document.getElementById('case-size');
+    const category = categoryInput.value.trim();
+    const size = parseInt(sizeInput.value, 10);
+    if (!category || !(size > 0)) {
+        showToast('Enter a category and a case size', 'error');
+        return;
+    }
+    const updated = Object.fromEntries(
+        Object.entries(caseSizes).filter(([name]) => name.toLowerCase() !== category.toLowerCase()));
+    updated[category] = size;
+    await saveCaseSizes(updated);
+    categoryInput.value = '';
+    sizeInput.value = '';
+}
+
+async function removeCaseSize(category) {
+    const updated = { ...caseSizes };
+    delete updated[category];
+    await saveCaseSizes(updated);
 }
 
 // ---- Manifest email settings ----
